@@ -1,217 +1,230 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
-import { Calendar, DollarSign, Bell, CheckCircle2, XCircle } from "lucide-react"
-import { mockPagos, mockAsistencias, mockAvisos } from "@/lib/mock-data"
+import { useState } from "react";
+import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  DollarSign,
+  Users,
+  BarChart2,
+  Bell,
+  Moon,
+  Sun,
+} from "lucide-react";
+import {
+  mockPagos,
+  mockAsistencias,
+  mockAlumnos,
+  mockAvisos,
+} from "@/lib/mock-data";
+import { Button } from "@/components/ui/button";
 
 export default function TutorDashboard() {
-  // Simulating data for the logged-in tutor's child (Juan Pérez - alumnoId: "1")
-  const alumnoId = "1"
-  const alumnoNombre = "Juan Pérez"
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
-  const [pagos] = useState(mockPagos.filter((p) => p.alumnoId === alumnoId))
-  const [asistencias] = useState(mockAsistencias.filter((a) => a.alumnoId === alumnoId))
-  const [avisos] = useState(mockAvisos.filter((a) => a.destinatarios.includes("tutores")))
+  // --- DATOS DEL TUTOR ---
+  const tutorData = {
+    hijos: mockAlumnos.filter((a) => a.tutor === "María Pérez"),
+  };
 
-  // Calculate stats
-  const totalPagado = pagos.filter((p) => p.estado === "pagado").reduce((sum, p) => sum + p.monto, 0)
-  const totalPendiente = pagos.filter((p) => p.estado === "pendiente").reduce((sum, p) => sum + p.monto, 0)
+  const hijosIds = tutorData.hijos.map((h) => h.id);
+  const pagos = mockPagos.filter((p) => hijosIds.includes(p.alumnoId));
+  const asistencias = mockAsistencias.filter((a) =>
+    hijosIds.includes(a.alumnoId)
+  );
+  const avisos = mockAvisos.filter((a) =>
+    a.destinatarios.includes("tutores")
+  );
+
+  // --- MENÚ LATERAL ---
+  const menuItems: MenuItem[] = [
+    {
+      title: "Asistencias",
+      icon: BarChart2,
+      href: "/dashboard/tutor/asistencias",
+      color: "text-blue-600",
+      bgColor: "bg-blue-50 dark:bg-blue-900/20",
+    },
+    {
+      title: "Pagos",
+      icon: DollarSign,
+      href: "/dashboard/tutor/pagos",
+      color: "text-green-600",
+      bgColor: "bg-green-50 dark:bg-green-900/20",
+    },
+  ];
+
+  // --- LÓGICA DE PAGOS ---
+  const meses = [
+    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+  ];
+
+  let ultimoMesPagado = "N/A";
+  let totalPagadoUltimoMes = 0;
+  let mesPendiente = "Al día";
+  let totalPendienteMesSiguiente = 0;
+
+  const pagosPagados = pagos.filter((p) => p.estado === "pagado");
+  const pagosPendientes = pagos.filter((p) => p.estado === "pendiente");
+
+  if (pagosPagados.length > 0) {
+    let ultimoPago = pagosPagados[0];
+    let ultimoIndiceMes = -1;
+    pagosPagados.forEach((pago) => {
+      const [nombreMes] = pago.mes.split(" ");
+      const indiceActual = meses.indexOf(nombreMes);
+      if (indiceActual > ultimoIndiceMes) {
+        ultimoIndiceMes = indiceActual;
+        ultimoPago = pago;
+      }
+    });
+    ultimoMesPagado = ultimoPago.mes;
+    totalPagadoUltimoMes = ultimoPago.monto;
+  }
+
+  if (pagosPendientes.length > 0) {
+    let primerPagoPendiente = pagosPendientes[0];
+    let primerIndiceMes = 12;
+    pagosPendientes.forEach((pago) => {
+      const [nombreMes] = pago.mes.split(" ");
+      const indiceActual = meses.indexOf(nombreMes);
+      if (indiceActual < primerIndiceMes) {
+        primerIndiceMes = indiceActual;
+        primerPagoPendiente = pago;
+      }
+    });
+    mesPendiente = primerPagoPendiente.mes;
+    totalPendienteMesSiguiente = primerPagoPendiente.monto;
+  }
+
+  // --- LÓGICA DE ASISTENCIAS ---
+  const asistenciasTotales = asistencias.length;
+  const presenciasTotales = asistencias.filter((a) => a.presente).length;
   const asistenciasPorcentaje =
-    asistencias.length > 0 ? (asistencias.filter((a) => a.presente).length / asistencias.length) * 100 : 0
+    asistenciasTotales > 0
+      ? (presenciasTotales / asistenciasTotales) * 100
+      : 0;
 
+  // --- RENDERIZADO ---
   return (
-    <DashboardLayout title="Panel de Tutor">
+    <DashboardLayout title="Panel del Tutor" menuItems={menuItems}>
       <div className="space-y-6">
-        {/* Student Info Card */}
-        <Card className="bg-primary/5 border-primary/20">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold tracking-tight">
+            Resumen Familiar
+          </h1>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsDarkMode(!isDarkMode)}
+            >
+              {isDarkMode ? (
+                <Sun className="h-6 w-6" />
+              ) : (
+                <Moon className="h-6 w-6" />
+              )}
+            </Button>
+            <Button variant="ghost" size="icon" className="relative">
+              <Bell className="h-6 w-6" />
+              {avisos.length > 0 && (
+                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                  {avisos.length}
+                </span>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Información del Alumno</CardTitle>
+            <CardTitle>Mis Hijos</CardTitle>
+            <CardDescription>
+              Resumen y estado de tus hijos en el servicio.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="text-xl font-bold text-primary">{alumnoNombre.charAt(0)}</span>
+          <CardContent className="space-y-3">
+            {tutorData.hijos.map((hijo) => (
+              <div
+                key={hijo.id}
+                className="flex items-center justify-between p-3 border rounded-lg dark:border-slate-700"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-lg font-bold text-primary">
+                      {hijo.nombre.charAt(0)}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-semibold">{hijo.nombre}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {hijo.grado}
+                    </div>
+                  </div>
+                </div>
+                <Badge variant={hijo.activo ? "default" : "secondary"}>
+                  {hijo.activo ? "Activo" : "Inactivo"}
+                </Badge>
               </div>
-              <div>
-                <div className="font-semibold text-lg">{alumnoNombre}</div>
-                <div className="text-sm text-muted-foreground">3° Primaria</div>
-              </div>
-            </div>
+            ))}
           </CardContent>
         </Card>
 
-        {/* Quick Stats */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Total Pagado
+              <CardDescription className="text-xs">
+                Último mes pagado
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">${totalPagado.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-green-600 dark:text-green-500">
+                ${totalPagadoUltimoMes.toLocaleString()}
+              </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {pagos.filter((p) => p.estado === "pagado").length} pagos realizados
+                {ultimoMesPagado}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Pendiente
+              <CardDescription className="text-xs">
+                Mes pendiente
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">${totalPendiente.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-orange-600 dark:text-orange-500">
+                ${totalPendienteMesSiguiente.toLocaleString()}
+              </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {pagos.filter((p) => p.estado === "pendiente").length} pagos pendientes
+                {mesPendiente}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Asistencia
+              <CardDescription className="text-xs">
+                Asistencia General
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{asistenciasPorcentaje.toFixed(0)}%</div>
+              <div className="text-2xl font-bold">
+                {asistenciasPorcentaje.toFixed(0)}%
+              </div>
               <Progress value={asistenciasPorcentaje} className="mt-2" />
             </CardContent>
           </Card>
         </div>
-
-        <Tabs defaultValue="pagos" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="pagos">Pagos</TabsTrigger>
-            <TabsTrigger value="asistencia">Asistencia</TabsTrigger>
-            <TabsTrigger value="avisos">Avisos</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="pagos" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Historial de Pagos</CardTitle>
-                <CardDescription>Registro de pagos mensuales de {alumnoNombre}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Mes</TableHead>
-                        <TableHead>Monto</TableHead>
-                        <TableHead>Fecha de Pago</TableHead>
-                        <TableHead>Estado</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pagos.map((pago) => (
-                        <TableRow key={pago.id}>
-                          <TableCell className="font-medium">{pago.mes}</TableCell>
-                          <TableCell>${pago.monto.toLocaleString()}</TableCell>
-                          <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleDateString("es-MX") : "-"}</TableCell>
-                          <TableCell>
-                            <Badge variant={pago.estado === "pagado" ? "default" : "secondary"}>
-                              {pago.estado === "pagado" ? "Pagado" : "Pendiente"}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="asistencia" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Registro de Asistencia</CardTitle>
-                <CardDescription>Historial de asistencia de {alumnoNombre}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {asistencias.length > 0 ? (
-                    asistencias.map((asistencia) => (
-                      <div key={asistencia.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          {asistencia.presente ? (
-                            <CheckCircle2 className="h-5 w-5 text-green-600" />
-                          ) : (
-                            <XCircle className="h-5 w-5 text-red-600" />
-                          )}
-                          <div>
-                            <div className="font-medium">
-                              {new Date(asistencia.fecha).toLocaleDateString("es-MX", {
-                                weekday: "long",
-                                year: "numeric",
-                                month: "long",
-                                day: "numeric",
-                              })}
-                            </div>
-                            {asistencia.hora && (
-                              <div className="text-sm text-muted-foreground">Hora: {asistencia.hora}</div>
-                            )}
-                          </div>
-                        </div>
-                        <Badge variant={asistencia.presente ? "default" : "secondary"}>
-                          {asistencia.presente ? "Presente" : "Ausente"}
-                        </Badge>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No hay registros de asistencia disponibles
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="avisos" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Avisos Recibidos</CardTitle>
-                <CardDescription>Comunicados importantes del recorrido escolar</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {avisos.length > 0 ? (
-                    avisos.map((aviso) => (
-                      <div key={aviso.id} className="border rounded-lg p-4 space-y-2">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-2">
-                            <Bell className="h-5 w-5 text-primary" />
-                            <h3 className="font-semibold">{aviso.titulo}</h3>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(aviso.fecha).toLocaleDateString("es-MX")}
-                          </span>
-                        </div>
-                        <p className="text-sm text-foreground pl-7">{aviso.mensaje}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">No hay avisos disponibles</div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
       </div>
     </DashboardLayout>
-  )
+  );
 }

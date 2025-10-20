@@ -1,33 +1,18 @@
 export interface User {
-  email: string
+  username: string
   password: string
   role: "propietario" | "asistente" | "tutor"
   name: string
 }
 
 export const users: User[] = [
-  {
-    email: "propietario@recorrido.com",
-    password: "1234",
-    role: "propietario",
-    name: "Admin Principal",
-  },
-  {
-    email: "asistente@recorrido.com",
-    password: "1234",
-    role: "asistente",
-    name: "Asistente de Ruta",
-  },
-  {
-    email: "tutor@recorrido.com",
-    password: "1234",
-    role: "tutor",
-    name: "Padre de Familia",
-  },
+  { username: "admin01", password: "1234", role: "propietario", name: "Admin Principal" },
+  { username: "asistente01", password: "1234", role: "asistente", name: "Asistente de Ruta" },
+  { username: "tutor01", password: "1234", role: "tutor", name: "Padre de Familia" },
 ]
 
-export function validateCredentials(email: string, password: string): User | null {
-  const user = users.find((u) => u.email === email && u.password === password)
+export function validateCredentials(username: string, password: string): User | null {
+  const user = users.find((u) => u.username === username && u.password === password)
   return user || null
 }
 

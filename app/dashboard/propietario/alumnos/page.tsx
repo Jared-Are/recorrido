@@ -1,104 +1,179 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { DashboardLayout } from "@/components/dashboard-layout"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Plus, Search, Pencil, Trash2 } from "lucide-react"
-import Link from "next/link"
-import { mockAlumnos, type Alumno } from "@/lib/mock-data"
+import { useState, useEffect } from "react";
+import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Bell,
+  CalendarCheck,
+  Users,
+  BarChart3,
+  UserX,
+  Car,
+  UserCheck,
+  Moon,
+  Sun,
+  LogOut,
+} from "lucide-react";
+import { mockAlumnos, mockAvisos, mockAsistencias, mockVehiculos } from "@/lib/mock-data";
+import Link from "next/link";
 
-export default function AlumnosPage() {
-  const [alumnos, setAlumnos] = useState<Alumno[]>(mockAlumnos)
-  const [searchTerm, setSearchTerm] = useState("")
+// --- MENÚ DEL SIDEBAR ---
+const menuItems: MenuItem[] = [
+  {
+    title: "Registrar Asistencia",
+    icon: CalendarCheck,
+    href: "/dashboard/asistente/asistencia",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50 dark:bg-blue-900/20",
+  },
+  {
+    title: "Historial",
+    icon: BarChart3,
+    href: "/dashboard/asistente/historial",
+    color: "text-green-600",
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+  },
+];
 
-  const filteredAlumnos = alumnos.filter(
-    (alumno) =>
-      alumno.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      alumno.tutor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      alumno.grado.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+export default function AsistenteDashboard() {
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [avisos] = useState(mockAvisos.filter((a) => a.destinatarios.includes("personal")));
+  const [isWeekend, setIsWeekend] = useState(false);
 
-  const handleDelete = (id: string) => {
-    if (confirm("¿Estás seguro de eliminar este alumno?")) {
-      setAlumnos(alumnos.filter((a) => a.id !== id))
-    }
-  }
+  // --- DATOS DEL DÍA ---
+  const [asistenciasHoy] = useState(() => {
+    const todayISO = new Date().toISOString().split("T")[0];
+    return mockAsistencias.filter((a) => a.fecha === todayISO);
+  });
+
+  const totalAlumnos = mockAlumnos.length;
+  const ausentesHoy = asistenciasHoy.filter((a) => !a.presente).length;
+  const presentesHoy = totalAlumnos - ausentesHoy;
+  const vehiculoAsignado = mockVehiculos[0];
+
+  useEffect(() => {
+    const today = new Date().getDay();
+    if (today === 0 || today === 6) setIsWeekend(true);
+  }, []);
+
+  const todayFormatted = new Date().toLocaleDateString("es-MX", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
-    <DashboardLayout title="Gestión de Alumnos">
+    <DashboardLayout title="Panel del Asistente" menuItems={menuItems}>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar alumno..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Link href="/dashboard/propietario/alumnos/nuevo">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo Alumno
+        {/* ENCABEZADO CON MODO OSCURO Y NOTIFICACIONES */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold tracking-tight">Resumen del Día</h1>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsDarkMode(!isDarkMode)}
+            >
+              {isDarkMode ? <Sun className="h-6 w-6" /> : <Moon className="h-6 w-6" />}
             </Button>
-          </Link>
+            <Button variant="ghost" size="icon" className="relative">
+              <Bell className="h-6 w-6" />
+              {avisos.length > 0 && (
+                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                  {avisos.length}
+                </span>
+              )}
+            </Button>
+            <Button variant="outline" size="sm" className="ml-2">
+              <LogOut className="h-4 w-4 mr-1" /> Cerrar sesión
+            </Button>
+          </div>
         </div>
 
+        {/* TARJETA PRINCIPAL */}
         <Card>
           <CardHeader>
-            <CardTitle>Lista de Alumnos</CardTitle>
-            <CardDescription>Gestiona los estudiantes registrados en el sistema</CardDescription>
+            <CardTitle className="capitalize">{todayFormatted}</CardTitle>
+            <CardDescription>
+              {isWeekend
+                ? "Hoy es fin de semana, no hay recorrido programado."
+                : "Listo para iniciar el recorrido. Por favor, registra la asistencia."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Tutor</TableHead>
-                    <TableHead>Grado</TableHead>
-                    <TableHead>Contacto</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAlumnos.map((alumno) => (
-                    <TableRow key={alumno.id}>
-                      <TableCell className="font-medium">{alumno.nombre}</TableCell>
-                      <TableCell>{alumno.tutor}</TableCell>
-                      <TableCell>{alumno.grado}</TableCell>
-                      <TableCell>{alumno.contacto}</TableCell>
-                      <TableCell>
-                        <Badge variant={alumno.activo ? "default" : "secondary"}>
-                          {alumno.activo ? "Activo" : "Inactivo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Link href={`/dashboard/propietario/alumnos/${alumno.id}`}>
-                            <Button variant="ghost" size="icon">
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(alumno.id)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <Link href="/dashboard/asistente/asistencia">
+              <Button disabled={isWeekend}>
+                Registrar Asistencia del Día
+              </Button>
+            </Link>
           </CardContent>
         </Card>
+
+        {/* TARJETAS DE RESUMEN */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-2">
+                <Car className="h-4 w-4" />
+                Vehículo Asignado
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xl font-semibold">{vehiculoAsignado.placa}</p>
+              <p className="text-xs text-muted-foreground">
+                {vehiculoAsignado.choferNombre}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Total de Alumnos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">{totalAlumnos}</p>
+              <p className="text-xs text-muted-foreground">En esta ruta</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-2">
+                <UserCheck className="h-4 w-4" />
+                Presentes Hoy
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-green-600">{presentesHoy}</p>
+              <p className="text-xs text-muted-foreground">Alumnos a bordo</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-2">
+                <UserX className="h-4 w-4" />
+                Ausentes Hoy
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-red-600">{ausentesHoy}</p>
+              <p className="text-xs text-muted-foreground">
+                Alumnos marcados ausentes
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
-  )
+  );
 }
