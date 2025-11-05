@@ -1,15 +1,15 @@
 "use client";
 import { useState } from "react";
-import { DashboardLayout } from "@/components/dashboard-layout";
+import { AsistenteLayout } from "@/components/asistente-layout"; // <-- CAMBIO 1
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { mockAlumnos } from "@/lib/mock-data";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, AlertTriangle, ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { menuAsistente } from "@/lib/menu-asistente"; // ✅ Importa el menú
+import { CheckCircle2, AlertTriangle } from "lucide-react"; // <-- CAMBIO 2 (ArrowLeft eliminado)
+
+// --- CAMBIO 3: 'menuAsistente' y 'Link' eliminados ---
 
 export default function RegistrarAsistenciaPage() {
   const { toast } = useToast();
@@ -43,14 +43,10 @@ export default function RegistrarAsistenciaPage() {
   };
 
   return (
-    <DashboardLayout title="Registrar Asistencia" menuItems={menuAsistente}> {/* ✅ Props completas */}
+    // --- CAMBIO 4: Layout actualizado, sin props de menú ---
+    <AsistenteLayout title="Registrar Asistencia">
       <div className="space-y-4">
-        <Link href="/dashboard/asistente">
-          <Button variant="outline" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver al Resumen
-          </Button>
-        </Link>
+        {/* --- CAMBIO 5: Botón "Volver al Resumen" eliminado --- */}
 
         <Card>
           <CardHeader>
@@ -131,6 +127,6 @@ export default function RegistrarAsistenciaPage() {
           </div>
         </div>
       )}
-    </DashboardLayout>
+    </AsistenteLayout>
   );
 }

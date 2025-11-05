@@ -4,7 +4,7 @@ import type React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DashboardLayout } from "@/components/dashboard-layout";
+import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"; // Importado MenuItem
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,9 +22,90 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Save, Trash2, Plus } from "lucide-react";
+import { 
+    ArrowLeft, 
+    Save, 
+    Trash2, 
+    Plus,
+    Users, 
+    DollarSign, 
+    Bus, 
+    UserCog, 
+    Bell, 
+    BarChart3, 
+    TrendingDown 
+} from "lucide-react"; // Importados los iconos del menú
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+
+// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+const menuItems: MenuItem[] = [
+  {
+    title: "Gestionar Alumnos",
+    description: "Ver y administrar estudiantes",
+    icon: Users,
+    href: "/dashboard/propietario/alumnos",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50 dark:bg-blue-900/20",
+  },
+  {
+    title: "Gestionar Pagos",
+    description: "Ver historial y registrar pagos",
+    icon: DollarSign,
+    href: "/dashboard/propietario/pagos",
+    color: "text-green-600",
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+  },
+  {
+    title: "Gestionar Gastos",
+    description: "Control de combustible, salarios, etc.",
+    icon: TrendingDown,
+    href: "/dashboard/propietario/gastos",
+    color: "text-pink-600",
+    bgColor: "bg-pink-50 dark:bg-pink-900/20",
+  },
+  {
+    title: "Gestionar Personal",
+    description: "Administrar empleados y choferes",
+    icon: Users,
+    href: "/dashboard/propietario/personal",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50 dark:bg-purple-900/20",
+  },
+  {
+    title: "Gestionar Vehículos",
+    description: "Administrar flota de vehículos",
+    icon: Bus,
+    href: "/dashboard/propietario/vehiculos",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50 dark:bg-orange-900/20",
+  },
+  {
+    title: "Gestionar Usuarios",
+    description: "Administrar accesos al sistema",
+    icon: UserCog,
+    href: "/dashboard/propietario/usuarios",
+    color: "text-indigo-600",
+    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
+  },
+  {
+    title: "Enviar Avisos",
+    description: "Comunicados a tutores y personal",
+    icon: Bell,
+    href: "/dashboard/propietario/avisos",
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
+  },
+  {
+    title: "Generar Reportes",
+    description: "Estadísticas y análisis",
+    icon: BarChart3,
+    href: "/dashboard/propietario/reportes",
+    color: "text-red-600",
+    bgColor: "bg-red-50 dark:bg-red-900/20",
+  },
+];
+
 
 export default function NuevoAlumnoPage() {
   const router = useRouter();
@@ -35,9 +116,9 @@ export default function NuevoAlumnoPage() {
     tutor: "",
     grado: "",
     contacto: "",
-    direccion: "", // <-- Campo Dirección añadido
+    direccion: "",
     servicio: "",
-    recorridoId: "", // <-- CAMPO RECORRIDO AÑADIDO
+    recorridoId: "",
     precio: "",
     hermanos: false,
   });
@@ -95,18 +176,16 @@ export default function NuevoAlumnoPage() {
   };
 
   return (
-    <DashboardLayout title="Registrar Alumno">
+    <DashboardLayout title="Registrar Alumno" menuItems={menuItems}>
       <div className="space-y-6">
+        {/* El botón global de "Volver al Menú Principal" aparecerá aquí automáticamente desde el layout */}
+        
+        {/* Se conserva solo el botón "Volver a la lista" */}
         <div className="flex justify-between">
             <Link href="/dashboard/propietario/alumnos">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Volver a la lista
-              </Button>
-            </Link>
-             <Link href="/dashboard/propietario">
-              <Button variant="ghost" size="sm">
-                Volver al menú principal
               </Button>
             </Link>
         </div>
@@ -158,7 +237,6 @@ export default function NuevoAlumnoPage() {
                 </div>
               </div>
 
-              {/* --- CAMPO PARA ASIGNAR RECORRIDO --- */}
               <div className="space-y-2">
                 <Label>Asignar Recorrido *</Label>
                 <Select

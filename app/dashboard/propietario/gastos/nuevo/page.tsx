@@ -2,16 +2,84 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { DashboardLayout } from "@/components/dashboard-layout"
+import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Save } from "lucide-react"
+import { Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, ArrowLeft } from "lucide-react" // <-- Icono añadido
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { mockGastos } from "@/lib/mock-data"
+
+// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+const menuItems: MenuItem[] = [
+  {
+    title: "Gestionar Alumnos",
+    description: "Ver y administrar estudiantes",
+    icon: Users,
+    href: "/dashboard/propietario/alumnos",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50 dark:bg-blue-900/20",
+  },
+  {
+    title: "Gestionar Pagos",
+    description: "Ver historial y registrar pagos",
+    icon: DollarSign,
+    href: "/dashboard/propietario/pagos",
+    color: "text-green-600",
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+  },
+  {
+    title: "Gestionar Gastos",
+    description: "Control de combustible, salarios, etc.",
+    icon: TrendingDown,
+    href: "/dashboard/propietario/gastos",
+    color: "text-pink-600",
+    bgColor: "bg-pink-50 dark:bg-pink-900/20",
+  },
+  {
+    title: "Gestionar Personal",
+    description: "Administrar empleados y choferes",
+    icon: Users,
+    href: "/dashboard/propietario/personal",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50 dark:bg-purple-900/20",
+  },
+  {
+    title: "Gestionar Vehículos",
+    description: "Administrar flota de vehículos",
+    icon: Bus,
+    href: "/dashboard/propietario/vehiculos",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50 dark:bg-orange-900/20",
+  },
+  {
+    title: "Gestionar Usuarios",
+    description: "Administrar accesos al sistema",
+    icon: UserCog,
+    href: "/dashboard/propietario/usuarios",
+    color: "text-indigo-600",
+    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
+  },
+  {
+    title: "Enviar Avisos",
+    description: "Comunicados a tutores y personal",
+    icon: Bell,
+    href: "/dashboard/propietario/avisos",
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
+  },
+  {
+    title: "Generar Reportes",
+    description: "Estadísticas y análisis",
+    icon: BarChart3,
+    href: "/dashboard/propietario/reportes",
+    color: "text-red-600",
+    bgColor: "bg-red-50 dark:bg-red-900/20",
+  },
+];
 
 export default function NuevoGastoPage() {
   const router = useRouter()
@@ -58,8 +126,11 @@ export default function NuevoGastoPage() {
   }
 
   return (
-    <DashboardLayout title="Registrar Gasto" menuItems={[]}>
+    <DashboardLayout title="Registrar Gasto" menuItems={menuItems}>
       <div className="space-y-6">
+        {/* El botón "Volver al Menú Principal" se añadirá automáticamente por el layout */}
+        
+        {/* --- BOTÓN "VOLVER A LA LISTA" AÑADIDO --- */}
         <Link href="/dashboard/propietario/gastos">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -110,7 +181,7 @@ export default function NuevoGastoPage() {
                     <SelectContent>
                       <SelectItem value="combustible">Combustible</SelectItem>
                       <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
-                      <SelectItem value="salarios">Salarios</SelectItem>
+                      <SelectItem valueSvc="salarios">Salarios</SelectItem>
                       <SelectItem value="otros">Otros</SelectItem>
                     </SelectContent>
                   </Select>

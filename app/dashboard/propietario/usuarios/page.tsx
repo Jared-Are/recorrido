@@ -19,7 +19,7 @@ import {
     BarChart3, 
     TrendingDown 
 } from "lucide-react"
-import { mockPersonal, type Personal } from "@/lib/mock-data"
+import { mockUsuarios, type Usuario } from "@/lib/mock-data"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
 
@@ -91,65 +91,68 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-export default function PersonalPage() {
-  const [personal, setPersonal] = useState<Personal[]>(mockPersonal)
+export default function UsuariosPage() {
+  const [usuarios, setUsuarios] = useState<Usuario[]>(mockUsuarios)
   const { toast } = useToast()
 
   const handleDelete = (id: string) => {
-    if (window.confirm("¿Estás seguro de eliminar este registro?")) {
-      setPersonal(personal.filter((p) => p.id !== id))
-      toast({ title: "Personal eliminado", description: "El registro ha sido eliminado." })
+    if (window.confirm("¿Estás seguro de eliminar este usuario?")) {
+      setUsuarios(usuarios.filter((u) => u.id !== id))
+      toast({ title: "Usuario eliminado", description: "El registro ha sido eliminado." })
     }
   }
 
   return (
-    <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
+    <DashboardLayout title="Gestión de Usuarios" menuItems={menuItems}>
       <div className="space-y-6">
         <div className="flex justify-end">
-          <Link href="/dashboard/propietario/personal/nuevo">
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nuevo Personal
-              </Button>
+          <Link href="/dashboard/propietario/usuarios/nuevo">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Nuevo Usuario
+            </Button>
           </Link>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Lista de Personal</CardTitle>
-            <CardDescription>Gestiona choferes y asistentes de ruta</CardDescription>
+            <CardTitle>Lista de Usuarios</CardTitle>
+            <CardDescription>Gestiona los accesos al sistema</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
-                  <TableHead>Cargo</TableHead>
-                  <TableHead>Teléfono</TableHead>
+                  <TableHead>Email (Usuario)</TableHead>
+                  <TableHead>Rol</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {personal.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.nombre}</TableCell>
+                {usuarios.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">{u.nombre}</TableCell>
+                    <TableCell>{u.email}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{p.cargo === "chofer" ? "Chofer" : "Asistente"}</Badge>
+                      <Badge variant="outline" className="capitalize">{u.rol}</Badge>
                     </TableCell>
-                    <TableCell>{p.telefono}</TableCell>
                     <TableCell>
-                      <Badge variant={p.activo ? "default" : "secondary"}>{p.activo ? "Activo" : "Inactivo"}</Badge>
+                      <Badge variant={u.activo ? "default" : "secondary"}>{u.activo ? "Activo" : "Inactivo"}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {/* El enlace de edición ahora apunta a una futura página de edición */}
-                        <Link href={`/dashboard/propietario/personal/${p.id}`}>
-                            <Button variant="ghost" size="icon">
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                        </Link>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
+                        {/* El enlace de edición ahora debe apuntar a una página dedicada, ej: /usuarios/[id] */}
+                        {/* <Link href={`/dashboard/propietario/usuarios/${u.id}`}>
+                          <Button variant="ghost" size="icon">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Link> */}
+                        <Button variant="ghost" size="icon" onClick={() => {/* Lógica de editar futura */}}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(u.id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>

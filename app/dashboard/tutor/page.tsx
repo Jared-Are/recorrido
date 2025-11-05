@@ -1,139 +1,97 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
+import { TutorLayout } from "@/components/tutor-layout"
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import {
-  DollarSign,
-  Users,
-  BarChart2,
-  Bell,
-  Moon,
-  Sun,
-} from "lucide-react";
+} from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Bell } from "lucide-react"
 import {
   mockPagos,
   mockAsistencias,
   mockAlumnos,
   mockAvisos,
-} from "@/lib/mock-data";
-import { Button } from "@/components/ui/button";
+} from "@/lib/mock-data"
+import { Button } from "@/components/ui/button"
 
 export default function TutorDashboard() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
   // --- DATOS DEL TUTOR ---
   const tutorData = {
     hijos: mockAlumnos.filter((a) => a.tutor === "María Pérez"),
-  };
+  }
 
-  const hijosIds = tutorData.hijos.map((h) => h.id);
-  const pagos = mockPagos.filter((p) => hijosIds.includes(p.alumnoId));
-  const asistencias = mockAsistencias.filter((a) =>
-    hijosIds.includes(a.alumnoId)
-  );
-  const avisos = mockAvisos.filter((a) =>
-    a.destinatarios.includes("tutores")
-  );
-
-  // --- MENÚ LATERAL ---
-  const menuItems: MenuItem[] = [
-    {
-      title: "Asistencias",
-      icon: BarChart2,
-      href: "/dashboard/tutor/asistencias",
-      color: "text-blue-600",
-      bgColor: "bg-blue-50 dark:bg-blue-900/20",
-    },
-    {
-      title: "Pagos",
-      icon: DollarSign,
-      href: "/dashboard/tutor/pagos",
-      color: "text-green-600",
-      bgColor: "bg-green-50 dark:bg-green-900/20",
-    },
-  ];
+  const hijosIds = tutorData.hijos.map((h) => h.id)
+  const pagos = mockPagos.filter((p) => hijosIds.includes(p.alumnoId))
+  const asistencias = mockAsistencias.filter((a) => hijosIds.includes(a.alumnoId))
+  const avisos = mockAvisos.filter((a) => a.destinatarios.includes("tutores"))
 
   // --- LÓGICA DE PAGOS ---
   const meses = [
-    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
-  ];
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+  ]
 
-  let ultimoMesPagado = "N/A";
-  let totalPagadoUltimoMes = 0;
-  let mesPendiente = "Al día";
-  let totalPendienteMesSiguiente = 0;
+  let ultimoMesPagado = "N/A"
+  let totalPagadoUltimoMes = 0
+  let mesPendiente = "Al día"
+  let totalPendienteMesSiguiente = 0
 
-  const pagosPagados = pagos.filter((p) => p.estado === "pagado");
-  const pagosPendientes = pagos.filter((p) => p.estado === "pendiente");
+  const pagosPagados = pagos.filter((p) => p.estado === "pagado")
+  const pagosPendientes = pagos.filter((p) => p.estado === "pendiente")
 
   if (pagosPagados.length > 0) {
-    let ultimoPago = pagosPagados[0];
-    let ultimoIndiceMes = -1;
+    let ultimoPago = pagosPagados[0]
+    let ultimoIndiceMes = -1
     pagosPagados.forEach((pago) => {
-      const [nombreMes] = pago.mes.split(" ");
-      const indiceActual = meses.indexOf(nombreMes);
+      const [nombreMes] = pago.mes.split(" ")
+      const indiceActual = meses.indexOf(nombreMes)
       if (indiceActual > ultimoIndiceMes) {
-        ultimoIndiceMes = indiceActual;
-        ultimoPago = pago;
+        ultimoIndiceMes = indiceActual
+        ultimoPago = pago
       }
-    });
-    ultimoMesPagado = ultimoPago.mes;
-    totalPagadoUltimoMes = ultimoPago.monto;
+    })
+    ultimoMesPagado = ultimoPago.mes
+    totalPagadoUltimoMes = ultimoPago.monto
   }
 
   if (pagosPendientes.length > 0) {
-    let primerPagoPendiente = pagosPendientes[0];
-    let primerIndiceMes = 12;
+    let primerPagoPendiente = pagosPendientes[0]
+    let primerIndiceMes = 12
     pagosPendientes.forEach((pago) => {
-      const [nombreMes] = pago.mes.split(" ");
-      const indiceActual = meses.indexOf(nombreMes);
+      const [nombreMes] = pago.mes.split(" ")
+      const indiceActual = meses.indexOf(nombreMes)
       if (indiceActual < primerIndiceMes) {
-        primerIndiceMes = indiceActual;
-        primerPagoPendiente = pago;
+        primerIndiceMes = indiceActual
+        primerPagoPendiente = pago
       }
-    });
-    mesPendiente = primerPagoPendiente.mes;
-    totalPendienteMesSiguiente = primerPagoPendiente.monto;
+    })
+    mesPendiente = primerPagoPendiente.mes
+    totalPendienteMesSiguiente = primerPagoPendiente.monto
   }
 
   // --- LÓGICA DE ASISTENCIAS ---
-  const asistenciasTotales = asistencias.length;
-  const presenciasTotales = asistencias.filter((a) => a.presente).length;
+  const asistenciasTotales = asistencias.length
+  const presenciasTotales = asistencias.filter((a) => a.presente).length
   const asistenciasPorcentaje =
     asistenciasTotales > 0
       ? (presenciasTotales / asistenciasTotales) * 100
-      : 0;
+      : 0
 
   // --- RENDERIZADO ---
   return (
-    <DashboardLayout title="Panel del Tutor" menuItems={menuItems}>
-      <div className="space-y-6">
+    <TutorLayout title="Panel del Tutor">
+      <div className="space-y-6 pb-20"> {/* padding para barra inferior */}
+        {/* Encabezado */}
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold tracking-tight">
             Resumen Familiar
           </h1>
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsDarkMode(!isDarkMode)}
-            >
-              {isDarkMode ? (
-                <Sun className="h-6 w-6" />
-              ) : (
-                <Moon className="h-6 w-6" />
-              )}
-            </Button>
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-6 w-6" />
               {avisos.length > 0 && (
@@ -145,6 +103,7 @@ export default function TutorDashboard() {
           </div>
         </div>
 
+        {/* Tarjeta de Hijos */}
         <Card>
           <CardHeader>
             <CardTitle>Mis Hijos</CardTitle>
@@ -179,6 +138,7 @@ export default function TutorDashboard() {
           </CardContent>
         </Card>
 
+        {/* Resumen Financiero y Asistencias */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="pb-2">
@@ -195,6 +155,7 @@ export default function TutorDashboard() {
               </p>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="text-xs">
@@ -210,6 +171,7 @@ export default function TutorDashboard() {
               </p>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="text-xs">
@@ -225,6 +187,6 @@ export default function TutorDashboard() {
           </Card>
         </div>
       </div>
-    </DashboardLayout>
-  );
+    </TutorLayout>
+  )
 }
