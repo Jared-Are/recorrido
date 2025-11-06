@@ -90,7 +90,7 @@ export default function NuevoAvisoPage() {
   const [formData, setFormData] = useState({
     titulo: "",
     mensaje: "",
-    destinatarios: [] as string[],
+    destinatarios: [] as ("tutores" | "personal" | "todos")[],
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -113,7 +113,7 @@ export default function NuevoAvisoPage() {
     router.push("/dashboard/propietario/avisos")
   }
 
-  const toggleDestinatario = (tipo: string) => {
+  const toggleDestinatario = (tipo: "tutores" | "personal" | "todos") => {
     setFormData({
       ...formData,
       destinatarios: formData.destinatarios.includes(tipo)
