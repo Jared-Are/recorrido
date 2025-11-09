@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Plus, Search, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown } from "lucide-react"
+import { Plus, Search, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, Pencil, Trash2, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import { mockGastos, type Gasto } from "@/lib/mock-data"
+import { useToast } from "@/hooks/use-toast"
 
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
@@ -23,21 +24,39 @@ const menuItems: MenuItem[] = [
 ]
 
 export default function GastosPage() {
-  const [gastos] = useState<Gasto[]>(mockGastos)
+  const [gastos, setGastos] = useState<Gasto[]>(mockGastos.map(gasto => ({ 
+    ...gasto, 
+    estado: gasto.estado || "activo" // Asegurar que todos tengan estado
+  })))
   const [searchTerm, setSearchTerm] = useState("")
+  const { toast } = useToast()
 
+  // Filtrar gastos activos (no eliminados) y por búsqueda
   const filteredGastos = gastos.filter(
     (gasto) =>
-      gasto.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      gasto.categoria.toLowerCase().includes(searchTerm.toLowerCase()),
+      (gasto.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      gasto.categoria.toLowerCase().includes(searchTerm.toLowerCase())) &&
+      gasto.estado !== "eliminado"
   )
 
-  const totalGastado = gastos.reduce((sum, g) => sum + g.monto, 0)
+  // Calcular estadísticas solo con gastos activos
+  const gastosActivos = gastos.filter(gasto => gasto.estado === "activo")
+  const totalGastado = gastosActivos.reduce((sum, g) => sum + g.monto, 0)
+  
   const hoy = new Date()
   const mesActual = hoy.getFullYear() + "-" + String(hoy.getMonth() + 1).padStart(2, "0")
-  const gastoDelMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((sum, g) => sum + g.monto, 0)
-  const gastoMicrobusA = gastos.filter((g) => g.microbus === "A").reduce((sum, g) => sum + g.monto, 0)
-  const gastoMicrobusB = gastos.filter((g) => g.microbus === "B").reduce((sum, g) => sum + g.monto, 0)
+  const gastoDelMes = gastosActivos
+    .filter((g) => g.fecha.startsWith(mesActual))
+    .reduce((sum, g) => sum + g.monto, 0)
+
+  // Calcular gastos por microbús (usando la nueva estructura de microbus)
+  const gastoMicrobusA = gastosActivos
+    .filter((g) => g.microbus && g.microbus.includes('01'))
+    .reduce((sum, g) => sum + g.monto, 0)
+  
+  const gastoMicrobusB = gastosActivos
+    .filter((g) => g.microbus && g.microbus.includes('02'))
+    .reduce((sum, g) => sum + g.monto, 0)
 
   const getBadgeVariant = (categoria: string) => {
     switch (categoria) {
@@ -50,6 +69,62 @@ export default function GastosPage() {
       default:
         return "default"
     }
+  }
+
+  const getEstadoBadgeVariant = (estado: string) => {
+    switch (estado) {
+      case "activo":
+        return "default"
+      case "inactivo":
+        return "secondary"
+      case "eliminado":
+        return "destructive"
+      default:
+        return "outline"
+    }
+  }
+
+  const getEstadoBadgeText = (estado: string) => {
+    switch (estado) {
+      case "activo":
+        return "Activo"
+      case "inactivo":
+        return "Inactivo"
+      case "eliminado":
+        return "Eliminado"
+      default:
+        return estado
+    }
+  }
+
+  // Función para cambiar el estado del gasto (activar/desactivar/eliminar)
+  const cambiarEstadoGasto = (id: string, nuevoEstado: "activo" | "inactivo" | "eliminado") => {
+    setGastos(prevGastos => 
+      prevGastos.map(gasto => 
+        gasto.id === id ? { ...gasto, estado: nuevoEstado } : gasto
+      )
+    )
+
+    // Mostrar toast de confirmación
+    const gasto = gastos.find(g => g.id === id)
+    let mensaje = ""
+    
+    switch (nuevoEstado) {
+      case "activo":
+        mensaje = "Gasto activado correctamente"
+        break
+      case "inactivo":
+        mensaje = "Gasto desactivado correctamente"
+        break
+      case "eliminado":
+        mensaje = "Gasto eliminado correctamente"
+        break
+    }
+
+    toast({
+      title: "Estado actualizado",
+      description: `${mensaje}: ${gasto?.descripcion}`,
+    })
   }
 
   return (
@@ -76,7 +151,7 @@ export default function GastosPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Gasto Microbús A</CardDescription>
+              <CardDescription className="text-xs">Gasto Microbús 01</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-xl md:text-2xl font-bold text-blue-600">${gastoMicrobusA.toLocaleString()}</div>
@@ -84,7 +159,7 @@ export default function GastosPage() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Gasto Microbús B</CardDescription>
+              <CardDescription className="text-xs">Gasto Microbús 02</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-xl md:text-2xl font-bold text-green-600">${gastoMicrobusB.toLocaleString()}</div>
@@ -127,6 +202,8 @@ export default function GastosPage() {
                     <TableHead>Microbús</TableHead>
                     <TableHead>Monto</TableHead>
                     <TableHead>Fecha</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -138,9 +215,52 @@ export default function GastosPage() {
                           {gasto.categoria.charAt(0).toUpperCase() + gasto.categoria.slice(1)}
                         </Badge>
                       </TableCell>
-                      <TableCell>{gasto.microbus}</TableCell>
+                      <TableCell>{gasto.microbus || "N/A"}</TableCell>
                       <TableCell>${gasto.monto.toLocaleString()}</TableCell>
                       <TableCell>{new Date(gasto.fecha + "T00:00:00").toLocaleDateString()}</TableCell>
+                      <TableCell>
+                        <Badge variant={getEstadoBadgeVariant(gasto.estado)}>
+                          {getEstadoBadgeText(gasto.estado)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {/* Botón Editar */}
+                          <Link href={`/dashboard/propietario/gastos/editar/${gasto.id}`}>
+                            <Button variant="outline" size="sm">
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </Link>
+                          
+                          {/* Botón Activar/Desactivar */}
+                          {gasto.estado === "activo" ? (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => cambiarEstadoGasto(gasto.id, "inactivo")}
+                            >
+                              <EyeOff className="h-3 w-3" />
+                            </Button>
+                          ) : (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => cambiarEstadoGasto(gasto.id, "activo")}
+                            >
+                              <Eye className="h-3 w-3" />
+                            </Button>
+                          )}
+                          
+                          {/* Botón Eliminar */}
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => cambiarEstadoGasto(gasto.id, "eliminado")}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

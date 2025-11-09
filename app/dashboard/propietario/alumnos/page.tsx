@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,7 +24,20 @@ import {
     TrendingDown 
 } from "lucide-react"
 import Link from "next/link"
-import { mockAlumnos, type Alumno } from "@/lib/mock-data"
+import { useToast } from "@/hooks/use-toast"
+
+// --- DEFINICIÓN DEL TIPO ALUMNO (DESDE LA BD) ---
+export type Alumno = {
+  id: string;
+  nombre: string;
+  tutor: string;
+  grado: string;
+  contacto: string;
+  activo: boolean;
+  precio?: number;
+  direccion: string;
+  recorridoId: string;
+};
 
 // --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
 const menuItems: MenuItem[] = [
@@ -96,10 +109,38 @@ const menuItems: MenuItem[] = [
 
 
 export default function AlumnosPage() {
-  const [alumnos, setAlumnos] = useState<Alumno[]>(mockAlumnos)
+  const [alumnos, setAlumnos] = useState<Alumno[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
+
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedRecorrido, setSelectedRecorrido] = useState("todos")
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+
+  // --- OBTENER DATOS DE LA API ---
+  useEffect(() => {
+    const fetchAlumnos = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`);
+        if (!response.ok) {
+          throw new Error('No se pudieron cargar los alumnos');
+        }
+        const data: Alumno[] = await response.json();
+        setAlumnos(data);
+      } catch (err: any) {
+        setError(err.message);
+        toast({
+          title: "Error al cargar datos",
+          description: err.message,
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAlumnos();
+  }, [toast]); // Solo se ejecuta una vez al montar
 
   const filteredAlumnos = useMemo(() => {
     let alumnosFiltrados = [...alumnos];
@@ -115,15 +156,37 @@ export default function AlumnosPage() {
         (alumno) =>
           alumno.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
           alumno.tutor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          alumno.direccion.toLowerCase().includes(searchTerm.toLowerCase())
+          (alumno.direccion && alumno.direccion.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
     return alumnosFiltrados;
   }, [alumnos, searchTerm, selectedRecorrido]);
 
-  const handleDelete = (id: string) => {
-    if (window.confirm("¿Estás seguro de eliminar este alumno?")) {
-      setAlumnos(prev => prev.filter((a) => a.id !== id));
+  // --- BORRAR ALUMNO CON API ---
+  const handleDelete = async (id: string) => {
+    if (window.confirm("¿Estás seguro de eliminar este alumno? (Borrado lógico)")) {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error("No se pudo eliminar el alumno.");
+        }
+
+        setAlumnos(prev => prev.filter((a) => a.id !== id));
+        toast({
+          title: "Alumno Eliminado",
+          description: "El alumno se ha marcado como inactivo.",
+        });
+
+      } catch (err: any) {
+        toast({
+          title: "Error al eliminar",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -166,6 +229,29 @@ export default function AlumnosPage() {
     return { title: 'Total de Alumnos', description: 'Todos los recorridos combinados' };
   }, [selectedRecorrido, filteredAlumnos.length, alumnos.length]);
 
+
+  // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
+  if (loading) {
+    return (
+      <DashboardLayout title="Gestión de Alumnos" menuItems={menuItems}>
+        <div className="flex justify-center items-center h-64">
+          <p>Cargando alumnos...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout title="Gestión de Alumnos" menuItems={menuItems}>
+        <div className="flex justify-center items-center h-64">
+          <p className="text-destructive">Error: {error}</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // --- RENDERIZADO PRINCIPAL ---
   return (
     <DashboardLayout title="Gestión de Alumnos" menuItems={menuItems}>
       <div className="space-y-6">
@@ -209,12 +295,12 @@ export default function AlumnosPage() {
                 </div>
                 <div className="flex gap-2 justify-end">
                     <Button 
-                        variant="outline" 
-                        onClick={handleInvertirOrden}
-                        className={selectedRecorrido === 'todos' ? 'hidden' : ''}
+                      variant="outline" 
+                      onClick={handleInvertirOrden}
+                      className={selectedRecorrido === 'todos' ? 'hidden' : ''}
                     >
-                        <Replace className="h-4 w-4 mr-2" />
-                        Invertir Orden
+                      <Replace className="h-4 w-4 mr-2" />
+                      Invertir Orden
                     </Button>
                     <Link href="/dashboard/propietario/alumnos/nuevo">
                       <Button>

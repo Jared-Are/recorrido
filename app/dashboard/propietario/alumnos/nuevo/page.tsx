@@ -4,7 +4,7 @@ import type React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"; // Importado MenuItem
+import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -34,7 +34,7 @@ import {
     Bell, 
     BarChart3, 
     TrendingDown 
-} from "lucide-react"; // Importados los iconos del menú
+} from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
@@ -117,7 +117,6 @@ export default function NuevoAlumnoPage() {
     grado: "",
     contacto: "",
     direccion: "",
-    servicio: "",
     recorridoId: "",
     precio: "",
     hermanos: false,
@@ -147,40 +146,69 @@ export default function NuevoAlumnoPage() {
     setOtrosHijos(nuevos);
   };
 
+  // --- GUARDAR EN LA API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const hijosValidos = otrosHijos.filter((h) => h.nombre.trim() !== "");
-
-    const todosLosAlumnos = [
+    const alumnosAInscribir = [
       { nombre: formData.nombre, grado: formData.grado },
-      ...hijosValidos,
+      ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
     ];
 
-    console.log("Alumnos registrados:", todosLosAlumnos);
-    console.log("Tutor:", formData.tutor);
-    console.log("Dirección:", formData.direccion);
-    console.log("Recorrido asignado:", formData.recorridoId);
-    console.log("Precio compartido:", formData.precio);
+    try {
+      const promesasDeCreacion = alumnosAInscribir.map((alumno) => {
+        
+        const payload = {
+          nombre: alumno.nombre,
+          grado: alumno.grado,
+          tutor: formData.tutor,
+          contacto: formData.contacto,
+          direccion: formData.direccion,
+          recorridoId: formData.recorridoId,
+          precio: Number(formData.precio), // Convertir a número
+          activo: true, // Por defecto al crear
+        };
 
-    toast({
-      title: "Alumno(s) registrado(s)",
-      description: `Se registraron ${todosLosAlumnos.length} alumno(s) correctamente.`,
-    });
+        return fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+      });
 
-    setLoading(false);
-    router.push("/dashboard/propietario/alumnos");
+      const responses = await Promise.all(promesasDeCreacion);
+
+      const algunaFallo = responses.some((res) => !res.ok);
+      if (algunaFallo) {
+        throw new Error("Error al registrar a uno o más alumnos. Revisa que los datos no estén duplicados (ej. RUT).");
+      }
+
+      toast({
+        title: "Registro Exitoso",
+        description: `Se registraron ${alumnosAInscribir.length} alumno(s) correctamente.`,
+      });
+      
+      router.push("/dashboard/propietario/alumnos");
+
+    } catch (err: any) {
+      console.error("Error en handleSubmit:", err);
+      toast({
+        title: "Error en el registro",
+        description: err.message || "No se pudieron guardar los datos.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <DashboardLayout title="Registrar Alumno" menuItems={menuItems}>
       <div className="space-y-6">
-        {/* El botón global de "Volver al Menú Principal" aparecerá aquí automáticamente desde el layout */}
         
-        {/* Se conserva solo el botón "Volver a la lista" */}
         <div className="flex justify-between">
             <Link href="/dashboard/propietario/alumnos">
               <Button variant="ghost" size="sm">
@@ -292,6 +320,9 @@ export default function NuevoAlumnoPage() {
                             <SelectItem value="1° Primaria">1° Primaria</SelectItem>
                             <SelectItem value="2° Primaria">2° Primaria</SelectItem>
                             <SelectItem value="3° Primaria">3° Primaria</SelectItem>
+                            <SelectItem value="4° Primaria">4° Primaria</SelectItem>
+                            <SelectItem value="5° Primaria">5° Primaria</SelectItem>
+                            <SelectItem value="6° Primaria">6° Primaria</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

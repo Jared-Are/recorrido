@@ -8,10 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, ArrowLeft } from "lucide-react" // <-- Icono añadido
+import { Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import { mockGastos } from "@/lib/mock-data"
+import { mockGastos, type Gasto } from "@/lib/mock-data"
 
 // --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
 const menuItems: MenuItem[] = [
@@ -89,6 +89,7 @@ export default function NuevoGastoPage() {
     descripcion: "",
     monto: "",
     categoria: "",
+    microbus: "",
     fecha: new Date().toISOString().split("T")[0],
   })
 
@@ -101,17 +102,24 @@ export default function NuevoGastoPage() {
     setFormData(prev => ({ ...prev, categoria: value }))
   }
 
+  const handleMicrobusChange = (value: string) => {
+    setFormData(prev => ({ ...prev, microbus: value }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     await new Promise((resolve) => setTimeout(resolve, 800))
 
-    const nuevoGasto = {
+    // Crear el nuevo gasto con todas las propiedades requeridas
+    const nuevoGasto: Gasto = {
       id: Date.now().toString(),
       descripcion: formData.descripcion,
       monto: parseFloat(formData.monto) || 0,
-      categoria: formData.categoria as any,
+      categoria: formData.categoria,
       fecha: formData.fecha,
+      microbus: formData.microbus || undefined, // Opcional
+      estado: "activo" // Propiedad obligatoria añadida
     }
 
     mockGastos.unshift(nuevoGasto)
@@ -128,9 +136,6 @@ export default function NuevoGastoPage() {
   return (
     <DashboardLayout title="Registrar Gasto" menuItems={menuItems}>
       <div className="space-y-6">
-        {/* El botón "Volver al Menú Principal" se añadirá automáticamente por el layout */}
-        
-        {/* --- BOTÓN "VOLVER A LA LISTA" AÑADIDO --- */}
         <Link href="/dashboard/propietario/gastos">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -181,8 +186,27 @@ export default function NuevoGastoPage() {
                     <SelectContent>
                       <SelectItem value="combustible">Combustible</SelectItem>
                       <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
-                      <SelectItem valueSvc="salarios">Salarios</SelectItem>
+                      <SelectItem value="salarios">Salarios</SelectItem>
                       <SelectItem value="otros">Otros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="microbus">Microbús</Label>
+                  <Select 
+                    onValueChange={handleMicrobusChange} 
+                    value={formData.microbus}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona microbús" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="01">Microbús 01</SelectItem>
+                      <SelectItem value="02">Microbús 02</SelectItem>
+                      <SelectItem value="03">Microbús 03</SelectItem>
+                      <SelectItem value="01 y 02">Microbús 01 y 02</SelectItem>
+                      <SelectItem value="Todos">Todos</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

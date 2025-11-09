@@ -71,6 +71,8 @@ export type Gasto = {
   categoria: string
   fecha: string
   microbus?: string // 👈 agregado
+  estado: "activo" | "inactivo" | "eliminado"
+  notas?: string
 }
 
 
@@ -109,10 +111,42 @@ export const mockUsuarios: Usuario[] = [
 ];
 
 export const mockGastos: Gasto[] = [
-  { id: 'g1', descripcion: 'Gasolina para Bus 01 y 02', monto: 1250, categoria: 'combustible', fecha: '2025-10-15', microbus: '01 y 02' },
-  { id: 'g2', descripcion: 'Pago quincena a choferes', monto: 15000, categoria: 'salarios', fecha: '2025-10-15', microbus: 'Todos' },
-  { id: 'g3', descripcion: 'Cambio de llantas Bus 03', monto: 4800, categoria: 'mantenimiento', fecha: '2025-10-10', microbus: '03' },
-  { id: 'g4', descripcion: 'Compra de botiquín', monto: 550, categoria: 'otros', fecha: '2025-09-28', microbus: '01' },
+  { 
+    id: 'g1', 
+    descripcion: 'Gasolina para Bus 01 y 02', 
+    monto: 1250, 
+    categoria: 'combustible', 
+    fecha: '2025-10-15', 
+    microbus: '01 y 02',
+    estado: 'activo'
+  },
+  { 
+    id: 'g2', 
+    descripcion: 'Pago quincena a choferes', 
+    monto: 15000, 
+    categoria: 'salarios', 
+    fecha: '2025-10-15', 
+    microbus: 'Todos',
+    estado: 'activo'
+  },
+  { 
+    id: 'g3', 
+    descripcion: 'Cambio de llantas Bus 03', 
+    monto: 4800, 
+    categoria: 'mantenimiento', 
+    fecha: '2025-10-10', 
+    microbus: '03',
+    estado: 'activo'
+  },
+  { 
+    id: 'g4', 
+    descripcion: 'Compra de botiquín', 
+    monto: 550, 
+    categoria: 'otros', 
+    fecha: '2025-09-28', 
+    microbus: '01',
+    estado: 'activo'
+  },
 ];
 export const mockAvisos: Aviso[] = [
   { id: "av1", titulo: "Suspensión de clases", mensaje: "Se les informa que el día de mañana se suspenden las clases.", fecha: "2025-10-25", destinatarios: ["tutores", "personal"] },
