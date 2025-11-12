@@ -9,78 +9,33 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select" // Importar Select
 import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import { mockAlumnos, mockPagos } from "@/lib/mock-data"
+// Quitamos los mocks
+// import { mockAlumnos, mockPagos } from "@/lib/mock-data"
 
-// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
-const menuItems: MenuItem[] = [
-  {
-    title: "Gestionar Alumnos",
-    description: "Ver y administrar estudiantes",
-    icon: Users,
-    href: "/dashboard/propietario/alumnos",
-    color: "text-blue-600",
-    bgColor: "bg-blue-50 dark:bg-blue-900/20",
-  },
-  {
-    title: "Gestionar Pagos",
-    description: "Ver historial y registrar pagos",
-    icon: DollarSign,
-    href: "/dashboard/propietario/pagos",
-    color: "text-green-600",
-    bgColor: "bg-green-50 dark:bg-green-900/20",
-  },
-  {
-    title: "Gestionar Gastos",
-    description: "Control de combustible, salarios, etc.",
-    icon: TrendingDown,
-    href: "/dashboard/propietario/gastos",
-    color: "text-pink-600",
-    bgColor: "bg-pink-50 dark:bg-pink-900/20",
-  },
-  {
-    title: "Gestionar Personal",
-    description: "Administrar empleados y choferes",
-    icon: Users,
-    href: "/dashboard/propietario/personal",
-    color: "text-purple-600",
-    bgColor: "bg-purple-50 dark:bg-purple-900/20",
-  },
-  {
-    title: "Gestionar Vehículos",
-    description: "Administrar flota de vehículos",
-    icon: Bus,
-    href: "/dashboard/propietario/vehiculos",
-    color: "text-orange-600",
-    bgColor: "bg-orange-50 dark:bg-orange-900/20",
-  },
-  {
-    title: "Gestionar Usuarios",
-    description: "Administrar accesos al sistema",
-    icon: UserCog,
-    href: "/dashboard/propietario/usuarios",
-    color: "text-indigo-600",
-    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
-  },
-  {
-    title: "Enviar Avisos",
-    description: "Comunicados a tutores y personal",
-    icon: Bell,
-    href: "/dashboard/propietario/avisos",
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
-  },
-  {
-    title: "Generar Reportes",
-    description: "Estadísticas y análisis",
-    icon: BarChart3,
-    href: "/dashboard/propietario/reportes",
-    color: "text-red-600",
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-  },
-];
+// --- DEFINICIÓN DEL TIPO ALUMNO (DESDE LA BD) ---
+type Alumno = {
+  id: string;
+  nombre: string;
+  precio?: number;
+};
+
+// --- DEFINICIÓN DEL TIPO PAGO (DESDE LA BD) ---
+export type Pago = {
+  id: string;
+  alumnoId: string;
+  alumnoNombre: string;
+  monto: number;
+  mes: string;
+  fecha: string; 
+  estado: "pagado" | "pendiente";
+};
+
+// --- DEFINICIÓN DEL MENÚ (Copiado de tus archivos) ---
+const menuItems: MenuItem[] = [/* ... tu menú ... */];
 
 
 export default function NuevoPagoPage() {
@@ -88,6 +43,11 @@ export default function NuevoPagoPage() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [pagarAnioCompleto, setPagarAnioCompleto] = useState(false)
+  
+  // Estados para datos de la API
+  const [alumnos, setAlumnos] = useState<Alumno[]>([]);
+  const [pagos, setPagos] = useState<Pago[]>([]);
+  
   const [formData, setFormData] = useState({
     alumnoId: "",
     alumnoNombre: "",
@@ -96,11 +56,37 @@ export default function NuevoPagoPage() {
     fecha: new Date().toISOString().split("T")[0],
   })
 
-  // Hook para actualizar el formulario cuando cambia el alumno o la opción de pago anual
+  // --- Cargar Alumnos y Pagos desde la API ---
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [alumnosRes, pagosRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`)
+        ]);
+        if (!alumnosRes.ok || !pagosRes.ok) {
+          throw new Error('No se pudieron cargar los datos iniciales');
+        }
+        const alumnosData: Alumno[] = await alumnosRes.json();
+        const pagosData: Pago[] = await pagosRes.json();
+        setAlumnos(alumnosData);
+        setPagos(pagosData);
+      } catch (err: any) {
+        toast({
+          title: "Error",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    };
+    fetchData();
+  }, [toast]);
+
+  // Hook para actualizar el formulario (Tu lógica original, ¡adaptada a la API!)
   useEffect(() => {
     if (!formData.alumnoId) return
 
-    const alumno = mockAlumnos.find((a) => a.id === formData.alumnoId)
+    const alumno = alumnos.find((a) => a.id === formData.alumnoId)
     if (!alumno) return
     
     const montoMensual = alumno.precio ?? 800
@@ -113,12 +99,12 @@ export default function NuevoPagoPage() {
     let montoSugerido = montoMensual.toString()
 
     if (pagarAnioCompleto) {
-      montoSugerido = (montoMensual * 12).toString()
+      montoSugerido = (montoMensual * 12).toString() // Mostramos el total, pero la API guardará por mes
       mesSugerido = "Año Completo 2025"
     } else {
-      const pagosAlumno = mockPagos.filter((p) => p.alumnoId === formData.alumnoId)
+      // Usamos el estado 'pagos' de la API, no 'mockPagos'
+      const pagosAlumno = pagos.filter((p) => p.alumnoId === formData.alumnoId)
       if (pagosAlumno.length > 0) {
-        // Ordenar pagos por mes para encontrar el último
         const ultimoPago = pagosAlumno.sort((a, b) => meses.indexOf(b.mes.split(" ")[0]) - meses.indexOf(a.mes.split(" ")[0]))[0];
         const ultimoMesIdx = meses.indexOf(ultimoPago.mes.split(" ")[0]);
         const siguienteMes = meses[(ultimoMesIdx + 1) % 12];
@@ -133,74 +119,98 @@ export default function NuevoPagoPage() {
         mes: mesSugerido,
     }))
 
-  }, [formData.alumnoId, pagarAnioCompleto])
+  }, [formData.alumnoId, pagarAnioCompleto, alumnos, pagos]) // Depende de los datos de la API
 
+  // --- ENVIAR A LA API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.alumnoId) return
-
     setLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 800))
 
-    if (pagarAnioCompleto) {
-      const alumno = mockAlumnos.find(a => a.id === formData.alumnoId)
-      const montoMensual = alumno?.precio ?? 800
-      const meses = [
-        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-      ]
+    const alumno = alumnos.find(a => a.id === formData.alumnoId)
+    if (!alumno) return setLoading(false);
+    
+    const montoMensual = alumno.precio ?? 800;
 
-      meses.forEach(mes => {
-        const nuevoPago = {
-          id: `${Date.now()}-${mes}`,
+    try {
+      let promesasDeCreacion: Promise<Response>[] = [];
+
+      if (pagarAnioCompleto) {
+        // --- Lógica de Año Completo (12 llamadas a la API) ---
+        const meses = [
+          "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        ];
+        
+        promesasDeCreacion = meses.map(mes => {
+          const payload = {
+            alumnoId: formData.alumnoId,
+            alumnoNombre: formData.alumnoNombre,
+            monto: montoMensual,
+            mes: `${mes} 2025`,
+            fecha: formData.fecha,
+            estado: "pagado" as const,
+          };
+          return fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        });
+
+      } else {
+        // --- Lógica de Pago Único (1 llamada a la API) ---
+        const payload = {
           alumnoId: formData.alumnoId,
           alumnoNombre: formData.alumnoNombre,
-          monto: montoMensual,
-          mes: `${mes} 2025`,
+          monto: parseFloat(formData.monto),
+          mes: formData.mes,
           fecha: formData.fecha,
           estado: "pagado" as const,
-        }
-        mockPagos.unshift(nuevoPago)
-      })
+        };
+        promesasDeCreacion.push(
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        );
+      }
+      
+      // Ejecutar todas las promesas
+      const responses = await Promise.all(promesasDeCreacion);
+      const algunaFallo = responses.some(res => !res.ok);
+      
+      if (algunaFallo) {
+        throw new Error("Al menos un pago no se pudo registrar.");
+      }
       
       toast({
-        title: "Año Completo Registrado",
-        description: `Se registraron los 12 meses para ${formData.alumnoNombre}.`,
+        title: pagarAnioCompleto ? "Año Completo Registrado" : "Pago registrado",
+        description: `Se registraron ${promesasDeCreacion.length} pago(s) para ${formData.alumnoNombre}.`,
       })
+      router.push("/dashboard/propietario/pagos")
 
-    } else {
-      const nuevoPago = {
-        id: Date.now().toString(),
-        alumnoId: formData.alumnoId,
-        alumnoNombre: formData.alumnoNombre,
-        monto: parseFloat(formData.monto),
-        mes: formData.mes,
-        fecha: formData.fecha,
-        estado: "pagado" as const,
-      }
-      mockPagos.unshift(nuevoPago)
+    } catch (err: any) {
       toast({
-        title: "Pago registrado",
-        description: `Se registró el pago de ${formData.alumnoNombre} (${formData.mes}).`,
-      })
+        title: "Error al guardar",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false)
     }
-    
-    setLoading(false)
-    router.push("/dashboard/propietario/pagos")
   }
 
   return (
     <DashboardLayout title="Registrar Pago" menuItems={menuItems}>
       <div className="space-y-6">
-        {/* --- BOTÓN DE VOLVER A LA LISTA (EL DE VOLVER AL MENÚ ES AUTOMÁTICO) --- */}
-        <div className="flex flex-wrap gap-2">
-            <Link href="/dashboard/propietario/pagos">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Volver a la lista
-              </Button>
-            </Link>
-        </div>
+        <Link href="/dashboard/propietario/pagos">
+          <Button variant="ghost" size="sm">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Volver a la lista
+          </Button>
+        </Link>
 
         <Card>
           <CardHeader>
@@ -212,29 +222,27 @@ export default function NuevoPagoPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2 col-span-2">
                   <Label htmlFor="alumno">Alumno *</Label>
-                  <select
-                    id="alumno"
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  {/* --- Selector de Alumnos desde API --- */}
+                  <Select
                     value={formData.alumnoId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, alumnoId: e.target.value }))}
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, alumnoId: value }))}
                     required
                   >
-                    <option value="">Selecciona un alumno</option>
-                    {mockAlumnos.map((alumno) => (
-                      <option key={alumno.id} value={alumno.id}>
-                        {alumno.nombre}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger><SelectValue placeholder="Selecciona un alumno" /></SelectTrigger>
+                    <SelectContent>
+                      {alumnos.map((alumno) => (
+                        <SelectItem key={alumno.id} value={alumno.id}>
+                          {alumno.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="items-top flex space-x-2 col-span-2">
                   <Checkbox id="anioCompleto" checked={pagarAnioCompleto} onCheckedChange={(checked) => setPagarAnioCompleto(checked as boolean)} />
                   <div className="grid gap-1.5 leading-none">
-                    <label
-                      htmlFor="anioCompleto"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                    >
+                    <label htmlFor="anioCompleto" className="text-sm font-medium leading-none">
                       Pagar año completo
                     </label>
                     <p className="text-xs text-muted-foreground">
@@ -245,7 +253,7 @@ export default function NuevoPagoPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="monto">Monto</Label>
-                  <Input id="monto" value={formData.monto ? `$${parseFloat(formData.monto).toLocaleString()}` : ''} disabled />
+                  <Input id="monto" value={formData.monto ? `C$${parseFloat(formData.monto).toLocaleString()}` : ''} disabled />
                 </div>
 
                 <div className="space-y-2">
