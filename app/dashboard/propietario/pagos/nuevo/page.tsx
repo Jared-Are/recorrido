@@ -9,12 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select" // Importar Select
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-// Quitamos los mocks
-// import { mockAlumnos, mockPagos } from "@/lib/mock-data"
 
 // --- DEFINICIÓN DEL TIPO ALUMNO (DESDE LA BD) ---
 type Alumno = {
@@ -34,8 +32,73 @@ export type Pago = {
   estado: "pagado" | "pendiente";
 };
 
-// --- DEFINICIÓN DEL MENÚ (Copiado de tus archivos) ---
-const menuItems: MenuItem[] = [/* ... tu menú ... */];
+// --- DEFINICIÓN DEL MENÚ COMPLETO ---
+const menuItems: MenuItem[] = [
+  {
+    title: "Gestionar Alumnos",
+    description: "Ver y administrar estudiantes",
+    icon: Users,
+    href: "/dashboard/propietario/alumnos",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50 dark:bg-blue-900/20",
+  },
+  {
+    title: "Gestionar Pagos",
+    description: "Ver historial y registrar pagos",
+    icon: DollarSign,
+    href: "/dashboard/propietario/pagos",
+    color: "text-green-600",
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+  },
+  {
+    title: "Gestionar Gastos",
+    description: "Control de combustible, salarios, etc.",
+    icon: TrendingDown,
+    href: "/dashboard/propietario/gastos",
+    color: "text-pink-600",
+    bgColor: "bg-pink-50 dark:bg-pink-900/20",
+  },
+  {
+    title: "Gestionar Personal",
+    description: "Administrar empleados y choferes",
+    icon: Users,
+    href: "/dashboard/propietario/personal",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50 dark:bg-purple-900/20",
+  },
+  {
+    title: "Gestionar Vehículos",
+    description: "Administrar flota de vehículos",
+    icon: Bus,
+    href: "/dashboard/propietario/vehiculos",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50 dark:bg-orange-900/20",
+  },
+  {
+    title: "Gestionar Usuarios",
+    description: "Administrar accesos al sistema",
+    icon: UserCog,
+    href: "/dashboard/propietario/usuarios",
+    color: "text-indigo-600",
+    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
+  },
+  {
+    title: "Enviar Avisos",
+    description: "Comunicados a tutores y personal",
+    icon: Bell,
+    href: "/dashboard/propietario/avisos",
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
+  },
+  {
+    title: "Generar Reportes",
+    description: "Estadísticas y análisis",
+    icon: BarChart3,
+    href: "/dashboard/propietario/reportes",
+    color: "text-red-600",
+    bgColor: "bg-red-50 dark:bg-red-900/20",
+  },
+];
 
 
 export default function NuevoPagoPage() {
@@ -44,7 +107,6 @@ export default function NuevoPagoPage() {
   const [loading, setLoading] = useState(false)
   const [pagarAnioCompleto, setPagarAnioCompleto] = useState(false)
   
-  // Estados para datos de la API
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
   const [pagos, setPagos] = useState<Pago[]>([]);
   
@@ -82,7 +144,7 @@ export default function NuevoPagoPage() {
     fetchData();
   }, [toast]);
 
-  // Hook para actualizar el formulario (Tu lógica original, ¡adaptada a la API!)
+  // Hook para actualizar el formulario
   useEffect(() => {
     if (!formData.alumnoId) return
 
@@ -99,10 +161,9 @@ export default function NuevoPagoPage() {
     let montoSugerido = montoMensual.toString()
 
     if (pagarAnioCompleto) {
-      montoSugerido = (montoMensual * 12).toString() // Mostramos el total, pero la API guardará por mes
+      montoSugerido = (montoMensual * 12).toString()
       mesSugerido = "Año Completo 2025"
     } else {
-      // Usamos el estado 'pagos' de la API, no 'mockPagos'
       const pagosAlumno = pagos.filter((p) => p.alumnoId === formData.alumnoId)
       if (pagosAlumno.length > 0) {
         const ultimoPago = pagosAlumno.sort((a, b) => meses.indexOf(b.mes.split(" ")[0]) - meses.indexOf(a.mes.split(" ")[0]))[0];
@@ -119,7 +180,7 @@ export default function NuevoPagoPage() {
         mes: mesSugerido,
     }))
 
-  }, [formData.alumnoId, pagarAnioCompleto, alumnos, pagos]) // Depende de los datos de la API
+  }, [formData.alumnoId, pagarAnioCompleto, alumnos, pagos])
 
   // --- ENVIAR A LA API ---
   const handleSubmit = async (e: React.FormEvent) => {
@@ -136,7 +197,6 @@ export default function NuevoPagoPage() {
       let promesasDeCreacion: Promise<Response>[] = [];
 
       if (pagarAnioCompleto) {
-        // --- Lógica de Año Completo (12 llamadas a la API) ---
         const meses = [
           "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
           "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
@@ -159,7 +219,6 @@ export default function NuevoPagoPage() {
         });
 
       } else {
-        // --- Lógica de Pago Único (1 llamada a la API) ---
         const payload = {
           alumnoId: formData.alumnoId,
           alumnoNombre: formData.alumnoNombre,
@@ -177,7 +236,6 @@ export default function NuevoPagoPage() {
         );
       }
       
-      // Ejecutar todas las promesas
       const responses = await Promise.all(promesasDeCreacion);
       const algunaFallo = responses.some(res => !res.ok);
       
@@ -222,7 +280,6 @@ export default function NuevoPagoPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2 col-span-2">
                   <Label htmlFor="alumno">Alumno *</Label>
-                  {/* --- Selector de Alumnos desde API --- */}
                   <Select
                     value={formData.alumnoId}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, alumnoId: value }))}

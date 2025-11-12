@@ -23,8 +23,73 @@ type Pago = {
   estado: "pagado" | "pendiente";
 };
 
-// --- DEFINICIÓN DEL MENÚ (Copiado de tus archivos) ---
-const menuItems: MenuItem[] = [/* ... tu menú ... */];
+// --- DEFINICIÓN DEL MENÚ COMPLETO ---
+const menuItems: MenuItem[] = [
+  {
+    title: "Gestionar Alumnos",
+    description: "Ver y administrar estudiantes",
+    icon: Users,
+    href: "/dashboard/propietario/alumnos",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50 dark:bg-blue-900/20",
+  },
+  {
+    title: "Gestionar Pagos",
+    description: "Ver historial y registrar pagos",
+    icon: DollarSign,
+    href: "/dashboard/propietario/pagos",
+    color: "text-green-600",
+    bgColor: "bg-green-50 dark:bg-green-900/20",
+  },
+  {
+    title: "Gestionar Gastos",
+    description: "Control de combustible, salarios, etc.",
+    icon: TrendingDown,
+    href: "/dashboard/propietario/gastos",
+    color: "text-pink-600",
+    bgColor: "bg-pink-50 dark:bg-pink-900/20",
+  },
+  {
+    title: "Gestionar Personal",
+    description: "Administrar empleados y choferes",
+    icon: Users,
+    href: "/dashboard/propietario/personal",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50 dark:bg-purple-900/20",
+  },
+  {
+    title: "Gestionar Vehículos",
+    description: "Administrar flota de vehículos",
+    icon: Bus,
+    href: "/dashboard/propietario/vehiculos",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50 dark:bg-orange-900/20",
+  },
+  {
+    title: "Gestionar Usuarios",
+    description: "Administrar accesos al sistema",
+    icon: UserCog,
+    href: "/dashboard/propietario/usuarios",
+    color: "text-indigo-600",
+    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
+  },
+  {
+    title: "Enviar Avisos",
+    description: "Comunicados a tutores y personal",
+    icon: Bell,
+    href: "/dashboard/propietario/avisos",
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
+  },
+  {
+    title: "Generar Reportes",
+    description: "Estadísticas y análisis",
+    icon: BarChart3,
+    href: "/dashboard/propietario/reportes",
+    color: "text-red-600",
+    bgColor: "bg-red-50 dark:bg-red-900/20",
+  },
+];
 
 export default function EditarPagoPage() {
   const router = useRouter();
@@ -53,7 +118,6 @@ export default function EditarPagoPage() {
           throw new Error("No se pudo encontrar el pago");
         }
         const data: Pago = await response.json();
-        // Formateamos la fecha para el input type="date"
         setFormData({
           ...data,
           fecha: data.fecha ? new Date(data.fecha).toISOString().split('T')[0] : "", 
@@ -84,11 +148,10 @@ export default function EditarPagoPage() {
     setLoading(true);
 
     const payload = {
-      monto: Number(formData.monto), // Asegura que sea número
+      monto: Number(formData.monto),
       mes: formData.mes,
       estado: formData.estado,
-      fecha: formData.estado === 'pagado' ? formData.fecha : null, // Nulo si está pendiente
-      // No incluimos alumnoId o alumnoNombre, ya que no deberían cambiar
+      fecha: formData.estado === 'pagado' ? formData.fecha : null,
     };
 
     try {
@@ -168,7 +231,7 @@ export default function EditarPagoPage() {
                 {formData.estado === 'pagado' && (
                   <div className="space-y-2">
                     <Label htmlFor="fecha">Fecha de Pago *</Label>
-                    <Input id="fecha" name="fecha" type="date" value={formData.fecha} onChange={handleChange} required />
+                    <Input id="fecha" name="fecha" type="date" value={formData.fecha ?? ''} onChange={handleChange} required />
                   </div>
                 )}
               </div>

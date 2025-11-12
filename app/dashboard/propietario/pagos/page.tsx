@@ -7,12 +7,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select" // Importar Select
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { 
     Plus, 
     Search, 
-    Pencil,  // Importar Pencil
-    Trash2,  // Importar Trash2
+    Pencil,
+    Trash2,
     Users, 
     DollarSign, 
     Bus, 
@@ -35,7 +35,7 @@ export type Pago = {
   estado: "pagado" | "pendiente";
 };
 
-// --- DEFINICIÓN DEL MENÚ (Copiado de tus archivos) ---
+// --- DEFINICIÓN DEL MENÚ COMPLETO ---
 const menuItems: MenuItem[] = [
   {
     title: "Gestionar Alumnos",
@@ -53,7 +53,54 @@ const menuItems: MenuItem[] = [
     color: "text-green-600",
     bgColor: "bg-green-50 dark:bg-green-900/20",
   },
-  // ... (el resto de tu menú) ...
+  {
+    title: "Gestionar Gastos",
+    description: "Control de combustible, salarios, etc.",
+    icon: TrendingDown,
+    href: "/dashboard/propietario/gastos",
+    color: "text-pink-600",
+    bgColor: "bg-pink-50 dark:bg-pink-900/20",
+  },
+  {
+    title: "Gestionar Personal",
+    description: "Administrar empleados y choferes",
+    icon: Users,
+    href: "/dashboard/propietario/personal",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50 dark:bg-purple-900/20",
+  },
+  {
+    title: "Gestionar Vehículos",
+    description: "Administrar flota de vehículos",
+    icon: Bus,
+    href: "/dashboard/propietario/vehiculos",
+    color: "text-orange-600",
+    bgColor: "bg-orange-50 dark:bg-orange-900/20",
+  },
+  {
+    title: "Gestionar Usuarios",
+    description: "Administrar accesos al sistema",
+    icon: UserCog,
+    href: "/dashboard/propietario/usuarios",
+    color: "text-indigo-600",
+    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
+  },
+  {
+    title: "Enviar Avisos",
+    description: "Comunicados a tutores y personal",
+    icon: Bell,
+    href: "/dashboard/propietario/avisos",
+    color: "text-yellow-600",
+    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
+  },
+  {
+    title: "Generar Reportes",
+    description: "Estadísticas y análisis",
+    icon: BarChart3,
+    href: "/dashboard/propietario/reportes",
+    color: "text-red-600",
+    bgColor: "bg-red-50 dark:bg-red-900/20",
+  },
 ];
 
 
@@ -64,7 +111,7 @@ export default function PagosPage() {
   const { toast } = useToast()
   
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("todos"); // Filtro para 'pagado' o 'pendiente'
+  const [statusFilter, setStatusFilter] = useState("todos");
 
   // --- OBTENER DATOS DE LA API ---
   useEffect(() => {
@@ -90,7 +137,7 @@ export default function PagosPage() {
     fetchPagos();
   }, [toast]);
 
-  // --- LÓGICA DE FILTRADO (Usa el 'pagos' del estado) ---
+  // --- LÓGICA DE FILTRADO ---
   const filteredPagos = useMemo(() => {
     let pagosFiltrados = [...pagos];
     if (statusFilter !== "todos") {
@@ -103,11 +150,11 @@ export default function PagosPage() {
           pago.mes.toLowerCase().includes(searchTerm.toLowerCase()),
       );
     }
-    pagosFiltrados.sort((a, b) => (a.fecha > b.fecha ? -1 : 1));
+    pagosFiltrados.sort((a, b) => (new Date(b.fecha) as any) - (new Date(a.fecha) as any)); // Más recientes primero
     return pagosFiltrados;
   }, [pagos, searchTerm, statusFilter]);
 
-  // --- CÁLCULOS (Usan el 'pagos' del estado) ---
+  // --- CÁLCULOS ---
   const totalPagado = useMemo(() => 
     pagos.filter((p) => p.estado === "pagado").reduce((sum, p) => sum + p.monto, 0),
   [pagos]);
@@ -161,7 +208,7 @@ export default function PagosPage() {
   return (
     <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
       <div className="space-y-6">
-        {/* --- TARJETAS DE RESUMEN (De tu código) --- */}
+        {/* --- TARJETAS DE RESUMEN --- */}
         <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-2"><CardDescription className="text-xs">Total Pagado</CardDescription></CardHeader>
@@ -223,7 +270,7 @@ export default function PagosPage() {
                     <TableHead>Monto</TableHead>
                     <TableHead>Fecha de Pago</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead> {/* <-- AÑADIDO */}
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -232,13 +279,12 @@ export default function PagosPage() {
                       <TableCell className="font-medium">{pago.alumnoNombre}</TableCell>
                       <TableCell>{pago.mes}</TableCell>
                       <TableCell>C${pago.monto.toLocaleString()}</TableCell>
-                      <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>{pago.fecha ? new Date(pago.fecha + 'T00:00:00').toLocaleDateString() : "-"}</TableCell>
                       <TableCell>
                         <Badge variant={pago.estado === "pagado" ? "default" : "secondary"}>
                           {pago.estado === "pagado" ? "Pagado" : "Pendiente"}
                         </Badge>
                       </TableCell>
-                      {/* --- CELDAS DE ACCIÓN AÑADIDAS --- */}
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Link href={`/dashboard/propietario/pagos/${pago.id}`}>
