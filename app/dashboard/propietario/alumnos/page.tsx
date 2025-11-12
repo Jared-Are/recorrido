@@ -39,7 +39,7 @@ export type Alumno = {
   recorridoId: string;
 };
 
-// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+// --- DEFINICIÓN DEL MENÚ (Copiado de tus archivos) ---
 const menuItems: MenuItem[] = [
   {
     title: "Gestionar Alumnos",
@@ -117,6 +117,8 @@ export default function AlumnosPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedRecorrido, setSelectedRecorrido] = useState("todos")
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [sortOption, setSortOption] = useState("grado-asc");
+
 
   // --- OBTENER DATOS DE LA API ---
   useEffect(() => {
@@ -140,27 +142,72 @@ export default function AlumnosPage() {
       }
     };
     fetchAlumnos();
-  }, [toast]); // Solo se ejecuta una vez al montar
+  }, [toast]);
 
-  const filteredAlumnos = useMemo(() => {
+  // --- LÓGICA DE FILTRADO Y ORDEN ---
+  const filteredAndSortedAlumnos = useMemo(() => {
+    
+    const gradoToNumber = (grado: string) => {
+      const parts = grado.split(' ');
+      if (parts.length < 2) return 99;
+      const numero = parseInt(parts[0], 10) || 0;
+      const nivel = parts[1].toLowerCase();
+      
+      if (nivel.startsWith('preescolar')) return numero;
+      if (nivel.startsWith('primaria')) return numero + 3;
+      return 99;
+    };
+
     let alumnosFiltrados = [...alumnos];
 
+    // 1. Filtrar por Recorrido
     if (selectedRecorrido !== "todos") {
       alumnosFiltrados = alumnosFiltrados.filter(a => a.recorridoId === selectedRecorrido);
-    } else {
-      alumnosFiltrados.sort((a, b) => a.nombre.localeCompare(b.nombre));
     }
     
+    // 2. Filtrar por Término de Búsqueda
     if (searchTerm) {
       alumnosFiltrados = alumnosFiltrados.filter(
         (alumno) =>
           alumno.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
           alumno.tutor.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          alumno.contacto.toLowerCase().includes(searchTerm.toLowerCase()) ||
           (alumno.direccion && alumno.direccion.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
+
+    // 3. Aplicar Orden
+    switch (sortOption) {
+      case 'grado-asc':
+        alumnosFiltrados.sort((a, b) => gradoToNumber(a.grado) - gradoToNumber(b.grado));
+        break;
+      case 'grado-desc':
+        alumnosFiltrados.sort((a, b) => gradoToNumber(b.grado) - gradoToNumber(a.grado));
+        break;
+      case 'nombre-asc':
+        alumnosFiltrados.sort((a, b) => a.nombre.localeCompare(b.nombre));
+        break;
+      case 'nombre-desc':
+        alumnosFiltrados.sort((a, b) => b.nombre.localeCompare(a.nombre));
+        break;
+      case 'tutor-asc':
+        alumnosFiltrados.sort((a, b) => a.tutor.localeCompare(b.tutor));
+        break;
+      case 'tutor-desc':
+        alumnosFiltrados.sort((a, b) => b.tutor.localeCompare(a.tutor));
+        break;
+      case 'precio-asc':
+        alumnosFiltrados.sort((a, b) => (a.precio ?? 0) - (b.precio ?? 0));
+        break;
+      case 'precio-desc':
+        alumnosFiltrados.sort((a, b) => (b.precio ?? 0) - (a.precio ?? 0));
+        break;
+      default:
+        alumnosFiltrados.sort((a, b) => gradoToNumber(a.grado) - gradoToNumber(b.grado));
+    }
+    
     return alumnosFiltrados;
-  }, [alumnos, searchTerm, selectedRecorrido]);
+  }, [alumnos, searchTerm, selectedRecorrido, sortOption]);
 
   // --- BORRAR ALUMNO CON API ---
   const handleDelete = async (id: string) => {
@@ -190,6 +237,7 @@ export default function AlumnosPage() {
     }
   };
 
+  // --- Lógica de Arrastrar y Soltar ---
   const handleInvertirOrden = () => {
     if (selectedRecorrido === 'todos') return;
     const alumnosDelRecorrido = alumnos.filter(a => a.recorridoId === selectedRecorrido).reverse();
@@ -207,27 +255,27 @@ export default function AlumnosPage() {
   
   const handleDrop = (targetIndex: number) => {
     if (draggedIndex === null) return;
-
-    const draggedItem = filteredAlumnos[draggedIndex];
+    const draggedItem = filteredAndSortedAlumnos[draggedIndex];
     const newAlumnosList = [...alumnos];
     const originalDraggedIndex = newAlumnosList.findIndex(a => a.id === draggedItem.id);
     const [removed] = newAlumnosList.splice(originalDraggedIndex, 1);
-    const originalTargetIndex = newAlumnosList.findIndex(a => a.id === filteredAlumnos[targetIndex].id);
+    const originalTargetIndex = newAlumnosList.findIndex(a => a.id === filteredAndSortedAlumnos[targetIndex].id);
     newAlumnosList.splice(originalTargetIndex, 0, removed);
-    
     setAlumnos(newAlumnosList);
     setDraggedIndex(null);
   };
 
+  // ===== CORRECCIÓN AQUÍ: LÓGICA DE cardInfo AÑADIDA =====
   const cardInfo = useMemo(() => {
     if (selectedRecorrido === 'recorridoA') {
-      return { title: 'Total en Recorrido A', description: `Capacidad: ${filteredAlumnos.length} / 30` };
+      return { title: 'Total en Recorrido A', description: `Capacidad: ${filteredAndSortedAlumnos.length} / 30` };
     }
     if (selectedRecorrido === 'recorridoB') {
-      return { title: 'Total en Recorrido B', description: `Capacidad: ${filteredAlumnos.length} / 20` };
+      return { title: 'Total en Recorrido B', description: `Capacidad: ${filteredAndSortedAlumnos.length} / 20` };
     }
+    // Usamos 'alumnos.length' para el total general, no la lista filtrada
     return { title: 'Total de Alumnos', description: 'Todos los recorridos combinados' };
-  }, [selectedRecorrido, filteredAlumnos.length, alumnos.length]);
+  }, [selectedRecorrido, filteredAndSortedAlumnos.length, alumnos.length]); // <-- Dependencias correctas
 
 
   // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
@@ -255,11 +303,12 @@ export default function AlumnosPage() {
   return (
     <DashboardLayout title="Gestión de Alumnos" menuItems={menuItems}>
       <div className="space-y-6">
-        {/* --- CONTENEDOR DE CONTROLES ACTUALIZADO --- */}
+        {/* --- CONTENEDOR DE CONTROLES --- */}
         <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
 
             {/* Grupo de Filtro y Tarjeta */}
             <div className="flex flex-col md:flex-row gap-4 w-full lg:w-auto">
+                {/* Filtro de Recorrido */}
                 <Select onValueChange={setSelectedRecorrido} defaultValue="todos">
                   <SelectTrigger className="w-full md:w-[180px]">
                     <SelectValue placeholder="Filtrar por recorrido" />
@@ -270,24 +319,45 @@ export default function AlumnosPage() {
                     <SelectItem value="recorridoB">Recorrido B</SelectItem>
                   </SelectContent>
                 </Select>
-                <Card className="w-full md:w-[240px] flex-shrink-0">
+
+                {/* Filtro de Orden */}
+                <Select onValueChange={setSortOption} defaultValue="grado-asc">
+                  <SelectTrigger className="w-full md:w-[190px]">
+                    <SelectValue placeholder="Ordenar por" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="grado-asc">Grado (Ascendente)</SelectItem>
+                    <SelectItem value="grado-desc">Grado (Descendente)</SelectItem>
+                    <SelectItem value="nombre-asc">Nombre (A-Z)</SelectItem>
+                    <SelectItem value="nombre-desc">Nombre (Z-A)</SelectItem>
+                    <SelectItem value="tutor-asc">Tutor (A-Z)</SelectItem>
+                    <SelectItem value="tutor-desc">Tutor (Z-A)</SelectItem>
+                    <SelectItem value="precio-asc">Precio (Menor a Mayor)</SelectItem>
+                    <SelectItem value="precio-desc">Precio (Mayor a Menor)</SelectItem>
+                  </SelectContent>
+                </Select> {/* ===== CORRECCIÓN AQUÍ: </Select> en lugar de </S> ===== */}
+            </div>
+
+            {/* Grupo de Tarjeta de Info */}
+            <div className="flex-shrink-0">
+                <Card className="w-full md:w-[240px]">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                       <CardTitle className="text-sm font-medium">{cardInfo.title}</CardTitle>
                       <Users className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">{selectedRecorrido === 'todos' ? alumnos.length : filteredAlumnos.length}</div>
+                      <div className="text-2xl font-bold">{selectedRecorrido === 'todos' ? alumnos.length : filteredAndSortedAlumnos.length}</div>
                       <p className="text-xs text-muted-foreground">{cardInfo.description}</p>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Grupo de Búsqueda y Botones (con orden invertido en móvil) */}
+            {/* Grupo de Búsqueda y Botones */}
             <div className="flex flex-col-reverse md:flex-row gap-4 w-full lg:w-auto lg:flex-1 lg:justify-end">
                 <div className="relative flex-1 lg:max-w-xs">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar alumno..."
+                    placeholder="Buscar alumno, tutor, contacto..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-9 w-full"
@@ -329,6 +399,8 @@ export default function AlumnosPage() {
                   <TableRow>
                     {selectedRecorrido !== 'todos' && <TableHead className="w-12"></TableHead>}
                     <TableHead>Nombre</TableHead>
+                    <TableHead>Tutor</TableHead>
+                    <TableHead>Contacto</TableHead>
                     <TableHead>Dirección</TableHead>
                     <TableHead>Grado</TableHead>
                     <TableHead>Precio</TableHead>
@@ -337,7 +409,7 @@ export default function AlumnosPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAlumnos.map((alumno, index) => (
+                  {filteredAndSortedAlumnos.map((alumno, index) => (
                     <TableRow 
                       key={alumno.id}
                       draggable={selectedRecorrido !== 'todos'}
@@ -352,12 +424,14 @@ export default function AlumnosPage() {
                         </TableCell>
                       )}
                       <TableCell className="font-medium">{alumno.nombre}</TableCell>
+                      <TableCell>{alumno.tutor}</TableCell>
+                      <TableCell>{alumno.contacto}</TableCell>
                       <TableCell>{alumno.direccion}</TableCell>
                       <TableCell>{alumno.grado}</TableCell>
-                      <TableCell>${alumno.precio?.toLocaleString() ?? 'N/A'}</TableCell>
+                      <TableCell>C${alumno.precio?.toLocaleString() ?? 'N/A'}</TableCell>
                       <TableCell>
                         <Badge variant={alumno.activo ? "default" : "secondary"}>
-                          {alumno.activo ? "Activo" : "Inactivo"}
+                          {alumno.activo ? "Activo" : "Inactivo"} 
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
