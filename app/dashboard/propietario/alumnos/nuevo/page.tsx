@@ -38,8 +38,9 @@ import {
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
-// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+// --- DEFINICIÓN DEL MENÚ ---
 const menuItems: MenuItem[] = [
+  // ... (Tu menú sigue igual)
   {
     title: "Gestionar Alumnos",
     description: "Ver y administrar estudiantes",
@@ -118,7 +119,7 @@ export default function NuevoAlumnoPage() {
     contacto: "",
     direccion: "",
     recorridoId: "",
-    precio: "",
+    precio: "", // Sigue siendo el precio FAMILIAR
     hermanos: false,
   });
 
@@ -146,19 +147,32 @@ export default function NuevoAlumnoPage() {
     setOtrosHijos(nuevos);
   };
 
-  // --- GUARDAR EN LA API ---
+  // --- GUARDAR EN LA API (CON LÓGICA DE PRECIO CORREGIDA) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
+    // --- 1. Calcular el total de alumnos a inscribir ---
     const alumnosAInscribir = [
       { nombre: formData.nombre, grado: formData.grado },
       ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
     ];
+    const numeroDeHijos = alumnosAInscribir.length;
+
+    // --- 2. Calcular el precio individual ---
+    const precioFamiliar = Number(formData.precio);
+    if (precioFamiliar <= 0) {
+        toast({ title: "Error", description: "El precio familiar debe ser mayor a cero.", variant: "destructive" });
+        setLoading(false);
+        return;
+    }
+    // ¡Aquí está la magia!
+    const precioIndividual = precioFamiliar / numeroDeHijos;
 
     try {
       const promesasDeCreacion = alumnosAInscribir.map((alumno) => {
         
+        // --- 3. Usar el precio individual en el payload ---
         const payload = {
           nombre: alumno.nombre,
           grado: alumno.grado,
@@ -166,8 +180,8 @@ export default function NuevoAlumnoPage() {
           contacto: formData.contacto,
           direccion: formData.direccion,
           recorridoId: formData.recorridoId,
-          precio: Number(formData.precio), // Convertir a número
-          activo: true, // Por defecto al crear
+          precio: precioIndividual, // <-- CORREGIDO: Usamos el precio dividido
+          activo: true, 
         };
 
         return fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, {
@@ -183,12 +197,12 @@ export default function NuevoAlumnoPage() {
 
       const algunaFallo = responses.some((res) => !res.ok);
       if (algunaFallo) {
-        throw new Error("Error al registrar a uno o más alumnos. Revisa que los datos no estén duplicados (ej. RUT).");
+        throw new Error("Error al registrar a uno o más alumnos. Revisa que los datos no estén duplicados.");
       }
 
       toast({
         title: "Registro Exitoso",
-        description: `Se registraron ${alumnosAInscribir.length} alumno(s) correctamente.`,
+        description: `Se registraron ${alumnosAInscribir.length} alumno(s) (${precioIndividual.toFixed(2)} C$ c/u).`,
       });
       
       router.push("/dashboard/propietario/alumnos");
@@ -227,7 +241,7 @@ export default function NuevoAlumnoPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre Completo *</Label>
+                  <Label htmlFor="nombre">Nombre Completo * (Hijo 1)</Label>
                   <Input id="nombre" placeholder="Ej: Juan Pérez López" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
                 </div>
 
@@ -242,7 +256,7 @@ export default function NuevoAlumnoPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="grado">Grado *</Label>
+                  <Label htmlFor="grado">Grado * (Hijo 1)</Label>
                   <Select value={formData.grado} onValueChange={(value) => setFormData({ ...formData, grado: value })}>
                     <SelectTrigger><SelectValue placeholder="Selecciona el grado" /></SelectTrigger>
                     <SelectContent>
@@ -283,8 +297,11 @@ export default function NuevoAlumnoPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="precio">Precio Mensual (Familia) *</Label>
+                <Label htmlFor="precio">Precio Mensual (Total por Familia) *</Label>
                 <Input id="precio" type="number" placeholder="Ej: 1500" value={formData.precio} onChange={(e) => setFormData({ ...formData, precio: e.target.value })} required />
+                <p className="text-xs text-muted-foreground">
+                  Este precio se dividirá automáticamente entre todos los hijos registrados.
+                </p>
               </div>
 
               <div className="flex items-center gap-2 pt-2">
@@ -320,7 +337,7 @@ export default function NuevoAlumnoPage() {
                             <SelectItem value="1° Primaria">1° Primaria</SelectItem>
                             <SelectItem value="2° Primaria">2° Primaria</SelectItem>
                             <SelectItem value="3° Primaria">3° Primaria</SelectItem>
-                            <SelectItem value="4° Primaria">4° Primaria</SelectItem>
+                            <SelectItem value="4° Primaria">4_ Primaria</SelectItem>
                             <SelectItem value="5° Primaria">5° Primaria</SelectItem>
                             <SelectItem value="6° Primaria">6° Primaria</SelectItem>
                           </SelectContent>
