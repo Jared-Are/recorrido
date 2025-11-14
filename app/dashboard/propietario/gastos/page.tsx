@@ -1,17 +1,43 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Plus, Search, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, Pencil, Trash2, Eye, EyeOff } from "lucide-react"
+import { 
+    Plus, 
+    Search, 
+    Users, 
+    DollarSign, 
+    Bus, 
+    UserCog, 
+    Bell, 
+    BarChart3, 
+    TrendingDown, 
+    Pencil, 
+    Trash2, 
+    Eye, 
+    EyeOff 
+} from "lucide-react"
 import Link from "next/link"
-import { mockGastos, type Gasto } from "@/lib/mock-data"
 import { useToast } from "@/hooks/use-toast"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+// --- DEFINICIÓN DEL TIPO GASTO ---
+export type Gasto = {
+  id: string;
+  descripcion: string;
+  categoria: string;
+  microbus: string;
+  monto: number;
+  fecha: string; // Formato YYYY-MM-DD
+  estado: "activo" | "inactivo" | "eliminado";
+};
+
+// --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -24,108 +50,120 @@ const menuItems: MenuItem[] = [
 ]
 
 export default function GastosPage() {
-  const [gastos, setGastos] = useState<Gasto[]>(mockGastos.map(gasto => ({ 
-    ...gasto, 
-    estado: gasto.estado || "activo" // Asegurar que todos tengan estado
-  })))
+  const [gastos, setGastos] = useState<Gasto[]>([])
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("")
+  const [estadoFilter, setEstadoFilter] = useState("activo"); // Filtro por defecto
   const { toast } = useToast()
 
-  // Filtrar gastos activos (no eliminados) y por búsqueda
-  const filteredGastos = gastos.filter(
-    (gasto) =>
-      (gasto.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      gasto.categoria.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      gasto.estado !== "eliminado"
-  )
+  // --- Cargar Gastos desde la API ---
+  useEffect(() => {
+    const fetchGastos = async () => {
+      setLoading(true);
+      try {
+        // Pedimos al backend solo los gastos del estado seleccionado
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos?estado=${estadoFilter}`);
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar los gastos");
+        }
+        const data: Gasto[] = await response.json();
+        setGastos(data);
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchGastos();
+  }, [toast, estadoFilter]); // Se vuelve a cargar si cambia el filtro de estado
 
-  // Calcular estadísticas solo con gastos activos
-  const gastosActivos = gastos.filter(gasto => gasto.estado === "activo")
-  const totalGastado = gastosActivos.reduce((sum, g) => sum + g.monto, 0)
+  // --- Filtrar por Búsqueda (los gastos ya están filtrados por estado desde el API) ---
+  const filteredGastos = useMemo(() => {
+    return gastos.filter(
+      (gasto) =>
+        gasto.descripcion.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        gasto.categoria.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (gasto.microbus && gasto.microbus.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [gastos, searchTerm]);
+
+  // --- Cálculos ---
+  // (Usamos los gastos filtrados por estado ('activo' o 'inactivo') para los cálculos)
+  const totalGastado = gastos.reduce((sum, g) => sum + g.monto, 0)
   
   const hoy = new Date()
   const mesActual = hoy.getFullYear() + "-" + String(hoy.getMonth() + 1).padStart(2, "0")
-  const gastoDelMes = gastosActivos
+  const gastoDelMes = gastos
     .filter((g) => g.fecha.startsWith(mesActual))
     .reduce((sum, g) => sum + g.monto, 0)
 
-  // Calcular gastos por microbús (usando la nueva estructura de microbus)
-  const gastoMicrobusA = gastosActivos
+  const gastoMicrobusA = gastos
     .filter((g) => g.microbus && g.microbus.includes('01'))
     .reduce((sum, g) => sum + g.monto, 0)
   
-  const gastoMicrobusB = gastosActivos
+  const gastoMicrobusB = gastos
     .filter((g) => g.microbus && g.microbus.includes('02'))
     .reduce((sum, g) => sum + g.monto, 0)
 
+  // --- Helpers de UI (colores de badges) ---
   const getBadgeVariant = (categoria: string) => {
     switch (categoria) {
-      case "combustible":
-        return "destructive"
-      case "mantenimiento":
-        return "secondary"
-      case "salarios":
-        return "outline"
-      default:
-        return "default"
+      case "combustible": return "destructive"
+      case "mantenimiento": return "secondary"
+      case "salarios": return "outline"
+      default: return "default"
     }
   }
 
-  const getEstadoBadgeVariant = (estado: string) => {
-    switch (estado) {
-      case "activo":
-        return "default"
-      case "inactivo":
-        return "secondary"
-      case "eliminado":
-        return "destructive"
-      default:
-        return "outline"
+  // --- Lógica de Acciones (Conectada a la API) ---
+  const cambiarEstadoGasto = async (id: string, nuevoEstado: "activo" | "inactivo" | "eliminado") => {
+    const gasto = gastos.find(g => g.id === id);
+    if (!gasto) return;
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: nuevoEstado }), // Enviamos solo el cambio de estado
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo actualizar el estado del gasto");
+      }
+      
+      // Si fue exitoso, actualizamos la UI localmente
+      setGastos(prevGastos => prevGastos.filter(g => g.id !== id)); // Quitamos el gasto de la lista actual
+
+      let mensaje = "";
+      if (nuevoEstado === "eliminado") mensaje = "Gasto eliminado correctamente";
+      if (nuevoEstado === "inactivo") mensaje = "Gasto desactivado correctamente";
+      if (nuevoEstado === "activo") mensaje = "Gasto activado correctamente";
+
+      toast({
+        title: "Estado actualizado",
+        description: `${mensaje}: ${gasto?.descripcion}`,
+      });
+
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     }
   }
+  
+  // --- Borrado Físico (Opcional, si prefieres borrado real) ---
+  // const handleHardDelete = async (id: string) => {
+  //   if (!window.confirm("¿BORRAR PERMANENTEMENTE? Esta acción no se puede deshacer.")) return;
+  //   try {
+  //     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`, {
+  //       method: 'DELETE',
+  //     });
+  //     if (!response.ok) throw new Error("No se pudo eliminar el gasto.");
+  //     setGastos(prev => prev.filter((g) => g.id !== id));
+  //     toast({ title: "Gasto Eliminado", description: "El gasto ha sido eliminado permanentemente." });
+  //   } catch (err: any) {
+  //     toast({ title: "Error al eliminar", description: err.message, variant: "destructive" });
+  //   }
+  // }
 
-  const getEstadoBadgeText = (estado: string) => {
-    switch (estado) {
-      case "activo":
-        return "Activo"
-      case "inactivo":
-        return "Inactivo"
-      case "eliminado":
-        return "Eliminado"
-      default:
-        return estado
-    }
-  }
-
-  // Función para cambiar el estado del gasto (activar/desactivar/eliminar)
-  const cambiarEstadoGasto = (id: string, nuevoEstado: "activo" | "inactivo" | "eliminado") => {
-    setGastos(prevGastos => 
-      prevGastos.map(gasto => 
-        gasto.id === id ? { ...gasto, estado: nuevoEstado } : gasto
-      )
-    )
-
-    // Mostrar toast de confirmación
-    const gasto = gastos.find(g => g.id === id)
-    let mensaje = ""
-    
-    switch (nuevoEstado) {
-      case "activo":
-        mensaje = "Gasto activado correctamente"
-        break
-      case "inactivo":
-        mensaje = "Gasto desactivado correctamente"
-        break
-      case "eliminado":
-        mensaje = "Gasto eliminado correctamente"
-        break
-    }
-
-    toast({
-      title: "Estado actualizado",
-      description: `${mensaje}: ${gasto?.descripcion}`,
-    })
-  }
 
   return (
     <DashboardLayout title="Gestión de Gastos" menuItems={menuItems}>
@@ -135,7 +173,9 @@ export default function GastosPage() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription className="text-xs">Gasto Total</CardDescription>
+              <CardDescription className="text-xs">
+                Gasto Total ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-xl md:text-2xl font-bold text-red-600">${totalGastado.toLocaleString()}</div>
@@ -168,17 +208,28 @@ export default function GastosPage() {
         </div>
 
         {/* --- BOTÓN Y BUSCADOR --- */}
-        <div className="flex flex-col-reverse sm:flex-col gap-4 w-full max-w-md">
-          <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por descripción o categoría..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 w-full"
-            />
+        <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
+          <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por descripción, categoría..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 w-full"
+              />
+            </div>
+             <Select onValueChange={setEstadoFilter} value={estadoFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Filtrar por estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="activo">Activos</SelectItem>
+                <SelectItem value="inactivo">Inactivos</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <Link href="/dashboard/propietario/gastos/nuevo" className="w-full">
+          <Link href="/dashboard/propietario/gastos/nuevo" className="w-full sm:w-auto">
             <Button className="w-full">
               <Plus className="h-4 w-4 mr-2" />
               Registrar Gasto
@@ -189,7 +240,7 @@ export default function GastosPage() {
         {/* --- TABLA --- */}
         <Card>
           <CardHeader>
-            <CardTitle>Historial de Gastos</CardTitle>
+            <CardTitle>Historial de Gastos ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})</CardTitle>
             <CardDescription>Registro de todos los gastos operativos.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -202,62 +253,66 @@ export default function GastosPage() {
                     <TableHead>Microbús</TableHead>
                     <TableHead>Monto</TableHead>
                     <TableHead>Fecha</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Acciones</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredGastos.map((gasto) => (
+                  {loading && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center h-24">Cargando...</TableCell>
+                    </TableRow>
+                  )}
+                  {!loading && filteredGastos.length === 0 && (
+                     <TableRow>
+                      <TableCell colSpan={6} className="text-center h-24">No se encontraron gastos.</TableCell>
+                    </TableRow>
+                  )}
+                  {!loading && filteredGastos.map((gasto) => (
                     <TableRow key={gasto.id}>
-                      <TableCell className="font-medium">{gasto.descripcion}</TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">{gasto.descripcion}</TableCell>
                       <TableCell>
                         <Badge variant={getBadgeVariant(gasto.categoria)}>
                           {gasto.categoria.charAt(0).toUpperCase() + gasto.categoria.slice(1)}
                         </Badge>
                       </TableCell>
-                      <TableCell>{gasto.microbus || "N/A"}</TableCell>
-                      <TableCell>${gasto.monto.toLocaleString()}</TableCell>
-                      <TableCell>{new Date(gasto.fecha + "T00:00:00").toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        <Badge variant={getEstadoBadgeVariant(gasto.estado)}>
-                          {getEstadoBadgeText(gasto.estado)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {/* Botón Editar */}
+                      <TableCell className="whitespace-nowrap">{gasto.microbus || "N/A"}</TableCell>
+                      <TableCell className="whitespace-nowrap">${gasto.monto.toLocaleString()}</TableCell>
+                      <TableCell className="whitespace-nowrap">{new Date(gasto.fecha + "T00:00:00").toLocaleDateString('es-NI')}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
                           <Link href={`/dashboard/propietario/gastos/editar/${gasto.id}`}>
-                            <Button variant="outline" size="sm">
-                              <Pencil className="h-3 w-3" />
+                            <Button variant="ghost" size="icon" title="Editar">
+                              <Pencil className="h-4 w-4" />
                             </Button>
                           </Link>
                           
-                          {/* Botón Activar/Desactivar */}
                           {gasto.estado === "activo" ? (
                             <Button 
-                              variant="outline" 
-                              size="sm"
+                              variant="ghost" 
+                              size="icon"
+                              title="Desactivar"
                               onClick={() => cambiarEstadoGasto(gasto.id, "inactivo")}
                             >
-                              <EyeOff className="h-3 w-3" />
+                              <EyeOff className="h-4 w-4" />
                             </Button>
                           ) : (
                             <Button 
-                              variant="outline" 
-                              size="sm"
+                              variant="ghost" 
+                              size="icon"
+                              title="Activar"
                               onClick={() => cambiarEstadoGasto(gasto.id, "activo")}
                             >
-                              <Eye className="h-3 w-3" />
+                              <Eye className="h-4 w-4" />
                             </Button>
                           )}
                           
-                          {/* Botón Eliminar */}
                           <Button 
-                            variant="outline" 
-                            size="sm"
+                            variant="ghost" 
+                            size="icon"
+                            title="Eliminar (Mover a Papelera)"
                             onClick={() => cambiarEstadoGasto(gasto.id, "eliminado")}
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
                       </TableCell>

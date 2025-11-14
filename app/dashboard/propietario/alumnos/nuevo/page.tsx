@@ -124,11 +124,11 @@ export default function NuevoAlumnoPage() {
   });
 
   const [otrosHijos, setOtrosHijos] = useState<
-    { nombre: string; grado: string }[]
+    { nombre: string; grado: string; recorridoId: string }[]
   >([]);
 
   const agregarHijo = () => {
-    setOtrosHijos([...otrosHijos, { nombre: "", grado: "" }]);
+    setOtrosHijos([...otrosHijos, { nombre: "", grado: "", recorridoId: "" }]);
   };
 
   const eliminarHijo = (index: number) => {
@@ -139,7 +139,7 @@ export default function NuevoAlumnoPage() {
 
   const handleChangeHijo = (
     index: number,
-    field: "nombre" | "grado",
+    field: "nombre" | "grado" | "recorridoId",
     value: string
   ) => {
     const nuevos = [...otrosHijos];
@@ -154,7 +154,7 @@ export default function NuevoAlumnoPage() {
 
     // --- 1. Calcular el total de alumnos a inscribir ---
     const alumnosAInscribir = [
-      { nombre: formData.nombre, grado: formData.grado },
+      { nombre: formData.nombre, grado: formData.grado, recorridoId: formData.recorridoId },
       ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
     ];
     const numeroDeHijos = alumnosAInscribir.length;
@@ -166,21 +166,38 @@ export default function NuevoAlumnoPage() {
         setLoading(false);
         return;
     }
-    // ¡Aquí está la magia!
+
+    // --- ¡NUEVA VALIDACIÓN DE NÚMERO ENTERO! ---
+    // (Arregla Problema #1 y #2)
+    if (precioFamiliar % numeroDeHijos !== 0) {
+        toast({ 
+          title: "Error de Precio", 
+          description: `El precio familiar (C$ ${precioFamiliar}) no es divisible entre el número de hijos (${numeroDeHijos}). Ajuste el precio a un monto que resulte en un número entero por alumno.`, 
+          variant: "destructive",
+          duration: 8000 // Más tiempo para leer
+        });
+        setLoading(false);
+        return;
+    }
+    // Si la validación pasa, calculamos el precio
     const precioIndividual = precioFamiliar / numeroDeHijos;
 
     try {
       const promesasDeCreacion = alumnosAInscribir.map((alumno) => {
         
-        // --- 3. Usar el precio individual en el payload ---
+        // Validar que el grado y recorrido del alumno (principal o hermano) esté seleccionado
+        if (!alumno.grado || !alumno.recorridoId) {
+          throw new Error(`Por favor, selecciona un grado y un recorrido para ${alumno.nombre || 'el alumno'}.`);
+        }
+
         const payload = {
           nombre: alumno.nombre,
           grado: alumno.grado,
           tutor: formData.tutor,
           contacto: formData.contacto,
           direccion: formData.direccion,
-          recorridoId: formData.recorridoId,
-          precio: precioIndividual, // <-- CORREGIDO: Usamos el precio dividido
+          recorridoId: alumno.recorridoId, // <-- CORREGIDO: Usa el recorrido de cada alumno
+          precio: precioIndividual, // <-- Usamos el precio dividido (que ya sabemos es entero)
           activo: true, 
         };
 
@@ -197,6 +214,8 @@ export default function NuevoAlumnoPage() {
 
       const algunaFallo = responses.some((res) => !res.ok);
       if (algunaFallo) {
+        // Mensaje de error más genérico, ya que la validación de precio se hizo antes.
+        // Esto SÍ podría ser por un duplicado.
         throw new Error("Error al registrar a uno o más alumnos. Revisa que los datos no estén duplicados.");
       }
 
@@ -309,7 +328,7 @@ export default function NuevoAlumnoPage() {
                   checked={formData.hermanos}
                   onCheckedChange={(checked) => {
                     setFormData({ ...formData, hermanos: checked === true });
-                    if (checked) setOtrosHijos([{ nombre: "", grado: "" }]);
+                    if (checked) setOtrosHijos([{ nombre: "", grado: "", recorridoId: "" }]);
                     else setOtrosHijos([]);
                   }}
                   id="hermanos-check"
@@ -321,13 +340,15 @@ export default function NuevoAlumnoPage() {
                 <div className="space-y-4 mt-4 border-t pt-4">
                   <Label>Otros hijos</Label>
                   {otrosHijos.map((hijo, index) => (
-                    <div key={index} className="grid gap-2 md:grid-cols-3 items-end">
+                    <div key={index} className="grid gap-2 md:grid-cols-4 items-end">
                       <div className="space-y-2">
                         <Label>Nombre del hijo {index + 2}</Label>
                         <Input placeholder={`Ej: Pedro Pérez`} value={hijo.nombre} onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} />
                       </div>
+                      
+                      {/* --- ¡ARREGLADO! (Problema #3) --- */}
                       <div className="space-y-2">
-                        <Label>Grado</Label>
+                        <Label>Grado (Hijo {index + 2})</Label>
                         <Select value={hijo.grado} onValueChange={(value) => handleChangeHijo(index, "grado", value)}>
                           <SelectTrigger><SelectValue placeholder="Selecciona el grado" /></SelectTrigger>
                           <SelectContent>
@@ -337,12 +358,29 @@ export default function NuevoAlumnoPage() {
                             <SelectItem value="1° Primaria">1° Primaria</SelectItem>
                             <SelectItem value="2° Primaria">2° Primaria</SelectItem>
                             <SelectItem value="3° Primaria">3° Primaria</SelectItem>
-                            <SelectItem value="4° Primaria">4_ Primaria</SelectItem>
+                            <SelectItem value="4° Primaria">4° Primaria</SelectItem>
                             <SelectItem value="5° Primaria">5° Primaria</SelectItem>
                             <SelectItem value="6° Primaria">6° Primaria</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                      
+                      {/* --- ¡AÑADIDO! Selector de Recorrido para Hermanos --- */}
+                      <div className="space-y-2">
+                        <Label>Recorrido (Hijo {index + 2})</Label>
+                        <Select 
+                          value={hijo.recorridoId} 
+                          onValueChange={(value) => handleChangeHijo(index, "recorridoId", value)}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Selecciona un recorrido" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="recorridoA">Recorrido A</SelectItem>
+                            <SelectItem value="recorridoB">Recorrido B</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {/* --- FIN DEL CAMBIO --- */}
+
                       <Button type="button" variant="destructive" size="icon" onClick={() => eliminarHijo(index)} className="mt-6">
                         <Trash2 className="h-4 w-4" />
                       </Button>

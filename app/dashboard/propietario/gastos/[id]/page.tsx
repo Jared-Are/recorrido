@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea"; // <-- Importamos Textarea
+import { Textarea } from "@/components/ui/textarea";
 import { 
     ArrowLeft, 
     Save, 
@@ -18,13 +18,16 @@ import {
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown 
+    TrendingDown,
+    Loader2
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import type { Gasto } from "../page"; // Importamos el tipo Gasto
 
 // --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
+  // ... (tu menú)
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
   { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
@@ -35,18 +38,44 @@ const menuItems: MenuItem[] = [
   { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ];
 
-export default function NuevoGastoPage() {
+export default function EditarGastoPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    descripcion: "",
-    categoria: "",
-    microbus: "N/A", // Valor por defecto
-    monto: "",
-    fecha: new Date().toISOString().split('T')[0], // Fecha de hoy por defecto
-  });
+  const params = useParams();
+  const id = params.id as string;
 
+  const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
+  
+  // Usamos Partial<Gasto> para el estado inicial
+  const [formData, setFormData] = useState<Partial<Gasto>>({});
+
+  // --- Cargar datos del gasto a editar ---
+  useEffect(() => {
+    if (!id) return;
+    const fetchGasto = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`);
+        if (!response.ok) {
+          throw new Error("No se pudo encontrar el gasto");
+        }
+        const data: Gasto = await response.json();
+        setFormData({
+          ...data,
+          fecha: data.fecha ? new Date(data.fecha).toISOString().split('T')[0] : "", 
+          monto: data.monto || 0,
+        });
+      } catch (err: any) {
+        toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
+        router.push("/dashboard/propietario/gastos");
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    fetchGasto();
+  }, [id, router, toast]);
+
+  // --- Manejadores de formulario ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -56,34 +85,28 @@ export default function NuevoGastoPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Enviar Gasto a la API ---
+  // --- Enviar actualización a la API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     const payload = {
       ...formData,
-      monto: parseFloat(formData.monto), // Convertir a número
+      monto: Number(formData.monto), // Aseguramos que sea número
     };
 
-    if (!payload.categoria) {
-       toast({ title: "Error de validación", description: "Por favor, selecciona una categoría.", variant: "destructive" });
-       setLoading(false);
-       return;
-    }
-
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos`, {
-        method: 'POST',
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo registrar el gasto");
+        throw new Error("No se pudo actualizar el gasto");
       }
 
-      toast({ title: "¡Gasto Registrado!", description: "El gasto se ha guardado correctamente." });
+      toast({ title: "¡Actualizado!", description: "El gasto se ha guardado correctamente." });
       router.push("/dashboard/propietario/gastos");
 
     } catch (err: any) {
@@ -93,8 +116,16 @@ export default function NuevoGastoPage() {
     }
   };
 
+  if (loadingData) {
+    return (
+      <DashboardLayout title="Editar Gasto" menuItems={menuItems}>
+        <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      </DashboardLayout>
+    );
+  }
+
   return (
-    <DashboardLayout title="Registrar Gasto" menuItems={menuItems}>
+    <DashboardLayout title="Editar Gasto" menuItems={menuItems}>
       <div className="space-y-6">
         <Link href="/dashboard/propietario/gastos">
           <Button variant="ghost" size="sm">
@@ -105,8 +136,8 @@ export default function NuevoGastoPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Registrar Nuevo Gasto</CardTitle>
-            <CardDescription>Completa los detalles del gasto operativo.</CardDescription>
+            <CardTitle>Editar Gasto</CardTitle>
+            <CardDescription>Ajusta los detalles del gasto operativo.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -117,7 +148,7 @@ export default function NuevoGastoPage() {
                   id="descripcion" 
                   name="descripcion"
                   placeholder="Ej: Llenado de tanque de Microbús 01" 
-                  value={formData.descripcion} 
+                  value={formData.descripcion || ''} 
                   onChange={handleChange} 
                   required 
                 />
@@ -128,7 +159,7 @@ export default function NuevoGastoPage() {
                   <Label htmlFor="categoria">Categoría *</Label>
                   <Select 
                     name="categoria" 
-                    value={formData.categoria} 
+                    value={formData.categoria || ''} 
                     onValueChange={(value) => handleSelectChange("categoria", value)}
                     required
                   >
@@ -145,7 +176,7 @@ export default function NuevoGastoPage() {
                   <Label htmlFor="microbus">Microbús (Opcional)</Label>
                   <Select 
                     name="microbus" 
-                    value={formData.microbus} 
+                    value={formData.microbus || 'N/A'} 
                     onValueChange={(value) => handleSelectChange("microbus", value)}
                   >
                     <SelectTrigger><SelectValue placeholder="Asignar a un microbús" /></SelectTrigger>
@@ -168,7 +199,7 @@ export default function NuevoGastoPage() {
                     type="number" 
                     step="0.01"
                     placeholder="Ej: 1500.00" 
-                    value={formData.monto} 
+                    value={formData.monto || ''} 
                     onChange={handleChange} 
                     required 
                   />
@@ -179,7 +210,7 @@ export default function NuevoGastoPage() {
                     id="fecha" 
                     name="fecha" 
                     type="date" 
-                    value={formData.fecha} 
+                    value={formData.fecha || ''} 
                     onChange={handleChange} 
                     required 
                   />
@@ -189,7 +220,7 @@ export default function NuevoGastoPage() {
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
                   <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Gasto"}
+                  {loading ? "Guardando..." : "Guardar Cambios"}
                 </Button>
                 <Link href="/dashboard/propietario/gastos">
                   <Button type="button" variant="outline">Cancelar</Button>
