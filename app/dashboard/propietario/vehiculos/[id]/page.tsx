@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// Select ya no es necesario aquí
+// El Select ya no es necesario aquí
 // import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
     ArrowLeft, 
@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+// Importamos el tipo Vehiculo de la página de lista
+import type { Vehiculo } from "../page"; 
 
 // --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
@@ -36,48 +38,75 @@ const menuItems: MenuItem[] = [
   { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ];
 
-export default function NuevoVehiculoPage() {
+export default function EditarVehiculoPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    nombre: "",
-    placa: "",
-    marca: "",
-    modelo: "",
-    anio: "",
-    capacidad: "",
-    // 'recorridoAsignado' eliminado
-  });
+  const params = useParams();
+  const id = params.id as string;
 
+  const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
+  
+  const [formData, setFormData] = useState<Partial<Vehiculo>>({});
+
+  // --- Cargar datos del vehiculo a editar ---
+  useEffect(() => {
+    if (!id) return;
+    const fetchVehiculo = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`);
+        if (!response.ok) {
+          throw new Error("No se pudo encontrar el vehículo");
+        }
+        const data: Vehiculo = await response.json();
+        setFormData(data);
+      } catch (err: any) {
+        toast({ title: "Error al cargar", description: (err as Error).message, variant: "destructive" });
+        router.push("/dashboard/propietario/vehiculos");
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    fetchVehiculo();
+  }, [id, router, toast]);
+
+  // --- Manejadores de formulario ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Enviar Vehículo a la API ---
+  // handleSelectChange ya no es necesario
+  // const handleSelectChange = (name: string, value: string) => { ... };
+
+  // --- Enviar actualización a la API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
+    // Limpiamos el payload para no enviar datos extra
     const payload = {
-      ...formData,
-      anio: parseInt(formData.anio) || undefined,
-      capacidad: parseInt(formData.capacidad) || undefined,
+      nombre: formData.nombre,
+      placa: formData.placa,
+      marca: formData.marca,
+      modelo: formData.modelo,
+      anio: Number(formData.anio) || undefined,
+      capacidad: Number(formData.capacidad) || undefined,
+      // 'recorridoAsignado' eliminado
     };
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos`, {
-        method: 'POST',
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo registrar el vehículo");
+        throw new Error("No se pudo actualizar el vehículo");
       }
 
-      toast({ title: "¡Vehículo Registrado!", description: "El vehículo se ha guardado correctamente." });
+      toast({ title: "¡Actualizado!", description: "El vehículo se ha guardado correctamente." });
       router.push("/dashboard/propietario/vehiculos");
 
     } catch (err: any) {
@@ -87,8 +116,16 @@ export default function NuevoVehiculoPage() {
     }
   };
 
+  if (loadingData) {
+    return (
+      <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
+        <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      </DashboardLayout>
+    );
+  }
+
   return (
-    <DashboardLayout title="Registrar Vehículo" menuItems={menuItems}>
+    <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
       <div className="space-y-6">
         <Link href="/dashboard/propietario/vehiculos">
           <Button variant="ghost" size="sm">
@@ -99,8 +136,8 @@ export default function NuevoVehiculoPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Registrar Nuevo Vehículo</CardTitle>
-            <CardDescription>Completa los detalles de la unidad.</CardDescription>
+            <CardTitle>Editar Vehículo</CardTitle>
+            <CardDescription>Ajusta los detalles de la unidad.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -112,7 +149,7 @@ export default function NuevoVehiculoPage() {
                     id="nombre" 
                     name="nombre"
                     placeholder="Ej: Microbús 01" 
-                    value={formData.nombre} 
+                    value={formData.nombre || ''} 
                     onChange={handleChange} 
                     required 
                   />
@@ -123,7 +160,7 @@ export default function NuevoVehiculoPage() {
                     id="placa" 
                     name="placa"
                     placeholder="Ej: M 123 456" 
-                    value={formData.placa} 
+                    value={formData.placa || ''} 
                     onChange={handleChange} 
                     required 
                   />
@@ -137,7 +174,7 @@ export default function NuevoVehiculoPage() {
                     id="marca" 
                     name="marca"
                     placeholder="Ej: Toyota" 
-                    value={formData.marca} 
+                    value={formData.marca || ''} 
                     onChange={handleChange} 
                   />
                 </div>
@@ -147,7 +184,7 @@ export default function NuevoVehiculoPage() {
                     id="modelo" 
                     name="modelo" 
                     placeholder="Ej: Hiace" 
-                    value={formData.modelo} 
+                    value={formData.modelo || ''} 
                     onChange={handleChange} 
                   />
                 </div>
@@ -161,7 +198,7 @@ export default function NuevoVehiculoPage() {
                     name="anio" 
                     type="number" 
                     placeholder="Ej: 2018"
-                    value={formData.anio} 
+                    value={formData.anio || ''} 
                     onChange={handleChange} 
                   />
                 </div>
@@ -172,24 +209,24 @@ export default function NuevoVehiculoPage() {
                     name="capacidad" 
                     type="number" 
                     placeholder="Ej: 15"
-                    value={formData.capacidad} 
+                    value={formData.capacidad || ''} 
                     onChange={handleChange} 
                   />
                 </div>
               </div>
-
+              
               {/* --- CAMPO ELIMINADO ---
               <div className="space-y-2">
                   <Label htmlFor="recorridoAsignado">Recorrido Asignado</Label>
                   <Select ... >
                   </Select>
-                </div>
+              </div>
               */}
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
                   <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Vehículo"}
+                  {loading ? "Guardando..." : "Guardar Cambios"}
                 </Button>
                 <Link href="/dashboard/propietario/vehiculos">
                   <Button type="button" variant="outline">Cancelar</Button>

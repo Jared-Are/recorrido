@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react"; 
 import { useRouter } from "next/navigation";
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea"; // <-- Importamos Textarea
+import { Textarea } from "@/components/ui/textarea"; 
 import { 
     ArrowLeft, 
     Save, 
@@ -18,10 +18,22 @@ import {
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown 
+    TrendingDown,
+    Loader2
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+
+// --- NUEVOS TIPOS CARGADOS ---
+type Vehiculo = {
+  id: string;
+  nombre: string;
+};
+type Personal = {
+  id: string;
+  nombre: string;
+  salario: number;
+};
 
 // --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
@@ -35,17 +47,50 @@ const menuItems: MenuItem[] = [
   { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ];
 
+// Helper de formato de moneda
+const formatCurrency = (num: number) => {
+  return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export default function NuevoGastoPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [personal, setPersonal] = useState<Personal[]>([]); 
+
   const [formData, setFormData] = useState({
     descripcion: "",
     categoria: "",
-    microbus: "N/A", // Valor por defecto
+    vehiculoId: "N/A", 
+    personalId: "N/A", 
     monto: "",
-    fecha: new Date().toISOString().split('T')[0], // Fecha de hoy por defecto
+    fecha: new Date().toISOString().split('T')[0], 
   });
+
+  // --- CARGAR VEHÍCULOS Y PERSONAL AL INICIAR ---
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [vehiculosRes, personalRes] = await Promise.all([
+           fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`),
+           fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal?estado=activo`)
+        ]);
+        if (!vehiculosRes.ok) throw new Error("No se pudieron cargar los vehículos");
+        if (!personalRes.ok) throw new Error("No se pudo cargar la lista de personal");
+        
+        const dataVehiculos: Vehiculo[] = await vehiculosRes.json();
+        const dataPersonal: Personal[] = await personalRes.json();
+        
+        setVehiculos(dataVehiculos);
+        setPersonal(dataPersonal);
+      } catch (err: any) {
+        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+      }
+    };
+    fetchData();
+  }, [toast]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -53,7 +98,39 @@ export default function NuevoGastoPage() {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    // Caso especial: si cambian la categoría a 'salarios'
+    if (name === "categoria" && value === "salarios") {
+      setFormData(prev => ({ 
+        ...prev, 
+        categoria: value, 
+        descripcion: "Pago de salario: ",
+        vehiculoId: "N/A", 
+        monto: "", 
+        personalId: "N/A", 
+      }));
+    } 
+    // Caso especial: si eligen un empleado
+    else if (name === "personalId" && formData.categoria === "salarios") {
+      const empleado = personal.find(p => p.id === value);
+      if (empleado) {
+        setFormData(prev => ({
+          ...prev,
+          personalId: value,
+          monto: (empleado.salario || 0).toString(),
+          descripcion: `Pago de salario: ${empleado.nombre}`
+        }));
+      } else {
+         setFormData(prev => ({ 
+          ...prev,
+          personalId: "N/A",
+          monto: "",
+          descripcion: `Pago de salario: `
+        }));
+      }
+    } else {
+      // Caso normal
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   // --- Enviar Gasto a la API ---
@@ -61,13 +138,29 @@ export default function NuevoGastoPage() {
     e.preventDefault();
     setLoading(true);
 
+    const esSalario = formData.categoria === 'salarios';
+
     const payload = {
       ...formData,
-      monto: parseFloat(formData.monto), // Convertir a número
+      monto: parseFloat(formData.monto) || undefined, 
+      vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId, 
+      personalId: formData.personalId === "N/A" ? null : formData.personalId,
     };
 
     if (!payload.categoria) {
        toast({ title: "Error de validación", description: "Por favor, selecciona una categoría.", variant: "destructive" });
+       setLoading(false);
+       return;
+    }
+    
+    if (esSalario && !payload.personalId) {
+        toast({ title: "Error de validación", description: "Por favor, selecciona un empleado o 'N/A (Registrar salario manual)'.", variant: "destructive" });
+        setLoading(false);
+        return;
+    }
+    
+    if ((!esSalario || (esSalario && !payload.personalId)) && (!payload.monto || payload.monto <= 0)) {
+       toast({ title: "Error de validación", description: "El monto es obligatorio y debe ser mayor a cero.", variant: "destructive" });
        setLoading(false);
        return;
     }
@@ -80,18 +173,22 @@ export default function NuevoGastoPage() {
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo registrar el gasto");
+        const errData = await response.json();
+        throw new Error(errData.message || "No se pudo registrar el gasto");
       }
 
       toast({ title: "¡Gasto Registrado!", description: "El gasto se ha guardado correctamente." });
       router.push("/dashboard/propietario/gastos");
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
+      toast({ title: "Error al guardar", description: (err as Error).message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
+
+  const esSalario = formData.categoria === 'salarios';
+  const esSalarioManual = esSalario && formData.personalId === "N/A";
 
   return (
     <DashboardLayout title="Registrar Gasto" menuItems={menuItems}>
@@ -116,10 +213,11 @@ export default function NuevoGastoPage() {
                 <Textarea 
                   id="descripcion" 
                   name="descripcion"
-                  placeholder="Ej: Llenado de tanque de Microbús 01" 
+                  placeholder="Ej: Llenado de tanque o Pago de salario..." 
                   value={formData.descripcion} 
                   onChange={handleChange} 
                   required 
+                  disabled={esSalario && !esSalarioManual} // Deshabilitado si es salario automático
                 />
               </div>
 
@@ -142,22 +240,48 @@ export default function NuevoGastoPage() {
                   </Select>
                 </div>
                  <div className="space-y-2">
-                  <Label htmlFor="microbus">Microbús (Opcional)</Label>
+                  <Label htmlFor="vehiculoId">Asignar Vehículo</Label>
                   <Select 
-                    name="microbus" 
-                    value={formData.microbus} 
-                    onValueChange={(value) => handleSelectChange("microbus", value)}
+                    name="vehiculoId" 
+                    value={formData.vehiculoId} 
+                    onValueChange={(value) => handleSelectChange("vehiculoId", value)} 
+                    disabled={esSalario} // Deshabilitar si es salario
                   >
-                    <SelectTrigger><SelectValue placeholder="Asignar a un microbús" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Asignar a un vehículo" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="N/A">N/A (Gasto General)</SelectItem>
-                      <SelectItem value="Microbús 01">Microbús 01</SelectItem>
-                      <SelectItem value="Microbús 02">Microbús 02</SelectItem>
-                      <SelectItem value="Ambos">Ambos</SelectItem>
+                      {vehiculos.length === 0 && <SelectItem value="loading" disabled>Cargando...</SelectItem>}
+                      {vehiculos.map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                   {esSalario && (
+                    <p className="text-xs text-muted-foreground">Los salarios no se asignan a vehículos.</p>
+                   )}
+                </div>
+              </div>
+
+              {/* --- BLOQUE CONDICIONAL PARA SALARIOS (SIN CUADRO) --- */}
+              {esSalario && (
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="personalId">Asignar Empleado *</Label>
+                  <Select 
+                    name="personalId" 
+                    value={formData.personalId} 
+                    onValueChange={(value) => handleSelectChange("personalId", value)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Selecciona un empleado" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="N/A">N/A (Registrar salario manual)</SelectItem>
+                      {personal.length === 0 && <SelectItem value="loading" disabled>Cargando personal...</SelectItem>}
+                      {personal.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.nombre} (Salario: C${formatCurrency(p.salario || 0)})</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -167,11 +291,15 @@ export default function NuevoGastoPage() {
                     name="monto" 
                     type="number" 
                     step="0.01"
-                    placeholder="Ej: 1500.00" 
+                    placeholder={esSalario && !esSalarioManual ? "Se llenará automáticamente" : "Ej: 1500.00"}
                     value={formData.monto} 
                     onChange={handleChange} 
                     required 
+                    disabled={esSalario && !esSalarioManual} // Deshabilitado si es salario auto
                   />
+                   {esSalario && !esSalarioManual && (
+                    <p className="text-xs text-muted-foreground">El monto se toma automáticamente del salario del empleado.</p>
+                   )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="fecha">Fecha del Gasto *</Label>
@@ -187,7 +315,7 @@ export default function NuevoGastoPage() {
               </div>
 
               <div className="flex gap-3 pt-4">
-                <Button type="submit" disabled={loading}>
+                <Button type="submit" disabled={loading || (vehiculos.length === 0 && personal.length === 0)}>
                   <Save className="h-4 w-4 mr-2" />
                   {loading ? "Guardando..." : "Guardar Gasto"}
                 </Button>

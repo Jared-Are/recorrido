@@ -8,21 +8,42 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown } from "lucide-react";
+import { 
+    ArrowLeft, 
+    Save, 
+    Users, 
+    DollarSign, 
+    Bus, 
+    UserCog, 
+    Bell, 
+    BarChart3, 
+    TrendingDown,
+    Loader2 
+} from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
-// --- DEFINICIÓN DEL TIPO ALUMNO (DESDE LA BD) ---
+// --- TIPO PARA EL VEHÍCULO CARGADO ---
+type Vehiculo = {
+  id: string;
+  nombre: string;
+};
+
+// --- DEFINICIÓN DEL TIPO ALUMNO (ACTUALIZADO) ---
 export type Alumno = {
   id: string;
   nombre: string;
   tutor: string;
   grado: string;
+  precio: number;
   contacto: string;
-  activo: boolean;
-  precio?: number;
   direccion: string;
-  recorridoId: string;
+  activo: boolean;
+  vehiculoId: string | null;
+  vehiculo?: { 
+    id: string;
+    nombre: string;
+  }
 };
 
 // --- DEFINICIÓN DEL MENÚ COMPLETO ---
@@ -103,32 +124,48 @@ export default function EditarAlumnoPage() {
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  
   const [formData, setFormData] = useState<Partial<Alumno>>({
     nombre: "",
     tutor: "",
     grado: "",
     contacto: "",
     direccion: "",
-    recorridoId: "",
+    vehiculoId: "", 
     precio: 0,
   });
 
-  // --- OBTENER DATOS DEL ALUMNO A EDITAR ---
+  // --- OBTENER DATOS DEL ALUMNO Y VEHÍCULOS ---
   useEffect(() => {
     if (!id) return;
 
-    const fetchAlumno = async () => {
+    const fetchDatos = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`);
-        if (!response.ok) {
+        const [alumnoRes, vehiculosRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`)
+        ]);
+
+        if (!alumnoRes.ok) {
           throw new Error("No se pudo encontrar el alumno");
         }
-        const data: Alumno = await response.json();
-        setFormData(data);
+        if (!vehiculosRes.ok) {
+          throw new Error("No se pudieron cargar los vehículos");
+        }
+        
+        const data: Alumno = await alumnoRes.json();
+        const dataVehiculos: Vehiculo[] = await vehiculosRes.json();
+
+        setVehiculos(dataVehiculos);
+        setFormData({
+          ...data,
+          vehiculoId: data.vehiculoId || "" // Asignar "" si es nulo
+        });
       } catch (err: any) {
         toast({
           title: "Error al cargar",
-          description: err.message,
+          description: (err as Error).message,
           variant: "destructive",
         });
         router.push("/dashboard/propietario/alumnos");
@@ -136,7 +173,7 @@ export default function EditarAlumnoPage() {
         setLoadingData(false);
       }
     };
-    fetchAlumno();
+    fetchDatos();
   }, [id, router, toast]);
 
   // --- MANEJADORES DE FORMULARIO ---
@@ -155,22 +192,29 @@ export default function EditarAlumnoPage() {
     setLoading(true);
 
     try {
+      // --- PAYLOAD LIMPIO Y ACTUALIZADO ---
       const payload = {
         nombre: formData.nombre,
         tutor: formData.tutor,
         grado: formData.grado,
         contacto: formData.contacto,
         direccion: formData.direccion,
-        recorridoId: formData.recorridoId,
+        vehiculoId: formData.vehiculoId, 
         precio: Number(formData.precio),
       };
+
+      if (!payload.vehiculoId) {
+       toast({ title: "Error de validación", description: "Por favor, selecciona un vehículo.", variant: "destructive" });
+       setLoading(false);
+       return;
+      }
       
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload), // Enviamos el payload limpio
+        body: JSON.stringify(payload), 
       });
 
       if (!response.ok) {
@@ -188,7 +232,7 @@ export default function EditarAlumnoPage() {
     } catch (err: any) {
       toast({
         title: "Error al guardar",
-        description: err.message,
+        description: (err as Error).message,
         variant: "destructive",
       });
     } finally {
@@ -200,7 +244,7 @@ export default function EditarAlumnoPage() {
     return (
       <DashboardLayout title="Editar Alumno" menuItems={menuItems}>
         <div className="flex justify-center items-center h-64">
-          <p>Cargando datos del alumno...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
     );
@@ -227,22 +271,22 @@ export default function EditarAlumnoPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre Completo *</Label>
-                  <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required />
+                  <Input id="nombre" name="nombre" value={formData.nombre || ''} onChange={handleChange} required />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="tutor">Nombre del Tutor *</Label>
-                  <Input id="tutor" name="tutor" value={formData.tutor} onChange={handleChange} required />
+                  <Input id="tutor" name="tutor" value={formData.tutor || ''} onChange={handleChange} required />
                 </div>
                 
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="direccion">Dirección *</Label>
-                  <Input id="direccion" name="direccion" value={formData.direccion} onChange={handleChange} required />
+                  <Input id="direccion" name="direccion" value={formData.direccion || ''} onChange={handleChange} required />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="grado">Grado *</Label>
-                  <Select value={formData.grado} onValueChange={(value) => handleSelectChange("grado", value)}>
+                  <Select value={formData.grado || ''} onValueChange={(value) => handleSelectChange("grado", value)}>
                     <SelectTrigger><SelectValue placeholder="Selecciona el grado" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
@@ -260,28 +304,38 @@ export default function EditarAlumnoPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="contacto">Teléfono de Contacto *</Label>
-                  <Input id="contacto" name="contacto" type="tel" value={formData.contacto} onChange={handleChange} required />
+                  <Input id="contacto" name="contacto" type="tel" value={formData.contacto || ''} onChange={handleChange} required />
                 </div>
               </div>
 
+              {/* --- SELECTOR DE VEHÍCULO (DINÁMICO) --- */}
               <div className="space-y-2">
-                <Label>Asignar Recorrido *</Label>
+                <Label>Asignar Vehículo *</Label>
                 <Select
-                  value={formData.recorridoId}
-                  onValueChange={(value) => handleSelectChange("recorridoId", value)}
+                  name="vehiculoId" 
+                  value={formData.vehiculoId || ''} 
+                  onValueChange={(value) => handleSelectChange("vehiculoId", value)} 
                   required
                 >
-                  <SelectTrigger><SelectValue placeholder="Selecciona un recorrido" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un vehículo" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="recorridoA">Recorrido A</SelectItem>
-                    <SelectItem value="recorridoB">Recorrido B</SelectItem>
+                    {/* --- ERROR ARREGLADO: LÍNEA ELIMINADA --- */}
+                    {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando vehículos...</SelectItem>} */}
+                    {vehiculos.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="precio">Precio Mensual</Label>
-                <Input id="precio" name="precio" type="number" value={formData.precio ?? 0} onChange={handleChange} />
+                <Label htmlFor="precio">Precio Mensual (Individual)</Label>
+                <Input id="precio" name="precio" type="number" step="0.01" value={formData.precio ?? 0} onChange={handleChange} />
+                 <p className="text-xs text-muted-foreground">
+                  Este es el precio individual del alumno (después de dividir entre hermanos si aplica).
+                </p>
               </div>
 
               <div className="flex gap-3 pt-4">

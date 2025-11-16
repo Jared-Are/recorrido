@@ -25,9 +25,19 @@ import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 import type { Gasto } from "../page"; // Importamos el tipo Gasto
 
+// --- NUEVOS TIPOS CARGADOS ---
+type Vehiculo = {
+  id: string;
+  nombre: string;
+};
+type Personal = {
+  id: string;
+  nombre: string;
+  salario: number;
+};
+
 // --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
-  // ... (tu menú)
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
   { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
@@ -38,6 +48,11 @@ const menuItems: MenuItem[] = [
   { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ];
 
+// Helper de formato de moneda
+const formatCurrency = (num: number) => {
+  return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export default function EditarGastoPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -47,32 +62,49 @@ export default function EditarGastoPage() {
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   
-  // Usamos Partial<Gasto> para el estado inicial
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  const [personal, setPersonal] = useState<Personal[]>([]); 
+  
   const [formData, setFormData] = useState<Partial<Gasto>>({});
 
-  // --- Cargar datos del gasto a editar ---
+  // --- Cargar datos del gasto Y ADEMÁS vehículos y personal ---
   useEffect(() => {
     if (!id) return;
-    const fetchGasto = async () => {
+
+    const fetchDatos = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`);
-        if (!response.ok) {
-          throw new Error("No se pudo encontrar el gasto");
-        }
-        const data: Gasto = await response.json();
+        const [gastoRes, vehiculosRes, personalRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal?estado=activo`)
+        ]);
+
+        if (!gastoRes.ok) throw new Error("No se pudo encontrar el gasto");
+        if (!vehiculosRes.ok) throw new Error("No se pudieron cargar los vehículos");
+        if (!personalRes.ok) throw new Error("No se pudo cargar la lista de personal");
+        
+        const data: Gasto = await gastoRes.json();
+        const dataVehiculos: Vehiculo[] = await vehiculosRes.json();
+        const dataPersonal: Personal[] = await personalRes.json();
+        
+        setVehiculos(dataVehiculos);
+        setPersonal(dataPersonal);
         setFormData({
           ...data,
           fecha: data.fecha ? new Date(data.fecha).toISOString().split('T')[0] : "", 
           monto: data.monto || 0,
+          vehiculoId: data.vehiculoId || "N/A",
+          personalId: data.personalId || "N/A", 
         });
+
       } catch (err: any) {
-        toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
+        toast({ title: "Error al cargar", description: (err as Error).message, variant: "destructive" });
         router.push("/dashboard/propietario/gastos");
       } finally {
         setLoadingData(false);
       }
     };
-    fetchGasto();
+    fetchDatos();
   }, [id, router, toast]);
 
   // --- Manejadores de formulario ---
@@ -82,7 +114,37 @@ export default function EditarGastoPage() {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    // Caso especial: si cambian la categoría a 'salarios'
+    if (name === "categoria" && value === "salarios") {
+      setFormData(prev => ({ 
+        ...prev, 
+        categoria: value, 
+        descripcion: "Pago de salario: ",
+        vehiculoId: "N/A",
+      }));
+    } 
+    // Caso especial: si eligen un empleado
+    else if (name === "personalId" && formData.categoria === "salarios") {
+      const empleado = personal.find(p => p.id === value);
+      if (empleado) {
+        setFormData(prev => ({
+          ...prev,
+          personalId: value,
+          monto: (empleado.salario || 0),
+          descripcion: `Pago de salario: ${empleado.nombre}`
+        }));
+      } else {
+         setFormData(prev => ({ 
+          ...prev,
+          personalId: "N/A",
+          monto: 0,
+          descripcion: `Pago de salario: `
+        }));
+      }
+    } else {
+      // Caso normal
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   // --- Enviar actualización a la API ---
@@ -90,10 +152,29 @@ export default function EditarGastoPage() {
     e.preventDefault();
     setLoading(true);
 
+    const esSalario = formData.categoria === 'salarios';
+    const esSalarioManual = esSalario && formData.personalId === "N/A";
+
     const payload = {
-      ...formData,
-      monto: Number(formData.monto), // Aseguramos que sea número
+      descripcion: formData.descripcion,
+      categoria: formData.categoria,
+      monto: Number(formData.monto) || undefined, 
+      fecha: formData.fecha,
+      vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId,
+      personalId: formData.personalId === "N/A" ? null : formData.personalId,
     };
+    
+    if (esSalario && !payload.personalId) {
+        toast({ title: "Error de validación", description: "Por favor, selecciona un empleado o 'N/A (Registrar salario manual)'.", variant: "destructive" });
+        setLoading(false);
+        return;
+    }
+    
+    if ((!esSalario || esSalarioManual) && (!payload.monto || payload.monto <= 0)) {
+       toast({ title: "Error de validación", description: "El monto es obligatorio y debe ser mayor a cero.", variant: "destructive" });
+       setLoading(false);
+       return;
+    }
 
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`, {
@@ -103,14 +184,15 @@ export default function EditarGastoPage() {
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo actualizar el gasto");
+        const errData = await response.json();
+        throw new Error(errData.message || "No se pudo actualizar el gasto");
       }
 
       toast({ title: "¡Actualizado!", description: "El gasto se ha guardado correctamente." });
       router.push("/dashboard/propietario/gastos");
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
+      toast({ title: "Error al guardar", description: (err as Error).message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -123,6 +205,9 @@ export default function EditarGastoPage() {
       </DashboardLayout>
     );
   }
+  
+  const esSalario = formData.categoria === 'salarios';
+  const esSalarioManual = esSalario && formData.personalId === "N/A";
 
   return (
     <DashboardLayout title="Editar Gasto" menuItems={menuItems}>
@@ -151,6 +236,7 @@ export default function EditarGastoPage() {
                   value={formData.descripcion || ''} 
                   onChange={handleChange} 
                   required 
+                  disabled={esSalario && !esSalarioManual} // Deshabilitado si es salario automático
                 />
               </div>
 
@@ -173,22 +259,50 @@ export default function EditarGastoPage() {
                   </Select>
                 </div>
                  <div className="space-y-2">
-                  <Label htmlFor="microbus">Microbús (Opcional)</Label>
+                  <Label htmlFor="vehiculoId">Asignar Vehículo</Label>
                   <Select 
-                    name="microbus" 
-                    value={formData.microbus || 'N/A'} 
-                    onValueChange={(value) => handleSelectChange("microbus", value)}
+                    name="vehiculoId"
+                    value={formData.vehiculoId || 'N/A'} 
+                    onValueChange={(value) => handleSelectChange("vehiculoId", value)}
+                    disabled={esSalario}
                   >
-                    <SelectTrigger><SelectValue placeholder="Asignar a un microbús" /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Asignar a un vehículo" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="N/A">N/A (Gasto General)</SelectItem>
-                      <SelectItem value="Microbús 01">Microbús 01</SelectItem>
-                      <SelectItem value="Microbús 02">Microbús 02</SelectItem>
-                      <SelectItem value="Ambos">Ambos</SelectItem>
+                      {/* --- ARREGLADO --- */}
+                      {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando...</SelectItem>} */}
+                      {vehiculos.map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {esSalario && (
+                    <p className="text-xs text-muted-foreground">Los salarios no se asignan a vehículos.</p>
+                   )}
+                </div>
+              </div>
+
+              {/* --- BLOQUE CONDICIONAL PARA SALARIOS (SIN CUADRO) --- */}
+              {esSalario && (
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="personalId">Asignar Empleado *</Label>
+                  <Select 
+                    name="personalId" 
+                    value={formData.personalId || "N/A"} 
+                    onValueChange={(value) => handleSelectChange("personalId", value)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Selecciona un empleado" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="N/A">N/A (Registrar salario manual)</SelectItem>
+                      {/* --- ARREGLADO --- */}
+                      {/* {personal.length === 0 && <SelectItem value="" disabled>Cargando personal...</SelectItem>} */}
+                      {personal.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.nombre} (Salario: C${formatCurrency(p.salario || 0)})</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -198,11 +312,15 @@ export default function EditarGastoPage() {
                     name="monto" 
                     type="number" 
                     step="0.01"
-                    placeholder="Ej: 1500.00" 
+                    placeholder={esSalario && !esSalarioManual ? "Se llenará automáticamente" : "Ej: 1500.00"}
                     value={formData.monto || ''} 
                     onChange={handleChange} 
                     required 
+                    disabled={esSalario && !esSalarioManual} // Deshabilitado si es salario automático
                   />
+                   {esSalario && !esSalarioManual && (
+                    <p className="text-xs text-muted-foreground">El monto se toma automáticamente del salario del empleado.</p>
+                   )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="fecha">Fecha del Gasto *</Label>

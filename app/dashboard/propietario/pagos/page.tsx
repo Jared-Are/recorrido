@@ -32,7 +32,7 @@ export type Pago = {
   id: string;
   alumnoId: string;
   alumnoNombre: string; 
-  monto: number;
+  monto: number; // Forzaremos la conversión por si llega como string
   mes: string;
   fecha: string; 
   estado: "pagado" | "pendiente";
@@ -43,14 +43,13 @@ export type Alumno = {
   nombre: string;
   tutor: string;
   grado: string;
-  precio?: number; 
+  precio?: number; // Forzaremos la conversión por si llega como string
   activo: boolean; 
 };
 
 
 // --- DEFINICIÓN DEL MENÚ COMPLETO ---
 const menuItems: MenuItem[] = [
-  // ... (tu menú)
   {
     title: "Gestionar Alumnos",
     description: "Ver y administrar estudiantes",
@@ -147,7 +146,6 @@ export default function PagosPage() {
   const { toast } = useToast()
   
   const [searchTerm, setSearchTerm] = useState("")
-  // const [statusFilter, setStatusFilter] = useState("todos"); // <-- ELIMINADO
   
   const [cardMonthFilter, setCardMonthFilter] = useState("Todos");
   
@@ -167,6 +165,11 @@ export default function PagosPage() {
         }
         const pagosData: Pago[] = await pagosRes.json();
         const alumnosData: Alumno[] = await alumnosRes.json();
+
+        // --- AÑADE ESTAS DOS LÍNEAS (AHORA SÍ, EN EL LUGAR CORRECTO) ---
+        console.log("ALUMNOS RECIBIDOS:", alumnosData);
+        console.log("PAGOS RECIBIDOS:", pagosData);
+        // ---------------------------------
         
         setPagos(pagosData);
         setAlumnos(alumnosData.filter(a => a.activo)); 
@@ -193,9 +196,6 @@ export default function PagosPage() {
       pagosFiltrados = pagosFiltrados.filter(p => p.mes === cardMonthFilter);
     }
 
-    // El filtro de "estado" se ha eliminado
-    // if (statusFilter !== "todos") { ... }
-
     if (searchTerm) {
       pagosFiltrados = pagosFiltrados.filter(
         (pago) =>
@@ -209,7 +209,7 @@ export default function PagosPage() {
       return dateB - dateA;
     });
     return pagosFiltrados;
-  }, [pagos, searchTerm, cardMonthFilter]); // <-- Dependencia de statusFilter eliminada, cardMonthFilter añadida
+  }, [pagos, searchTerm, cardMonthFilter]);
 
   // --- LÓGICA DE DATOS (Para la 'Vista de Cuaderno') ---
   const cuadernoData = useMemo(() => {
@@ -231,18 +231,21 @@ export default function PagosPage() {
       const fechaFormateada = `${fechaParts[2]}/${fechaParts[1]}`; 
 
       if (!pagosMap.get(pago.alumnoId)!.has(pago.mes)) {
-         pagosMap.get(pago.alumnoId)!.set(pago.mes, { 
-           fechaSimple: null, 
-           abonos: [], 
-           totalAbonado: 0 
-         });
+          pagosMap.get(pago.alumnoId)!.set(pago.mes, { 
+            fechaSimple: null, 
+            abonos: [], 
+            totalAbonado: 0 
+          });
       }
 
       const mesData = pagosMap.get(pago.alumnoId)!.get(pago.mes)!;
+      
+      // ✅ **CORRECCIÓN 1: Convertir a número antes de sumar**
+      const montoNumerico = Number(pago.monto) || 0; 
 
       if (pago.mes === MES_DICIEMBRE) {
-        mesData.abonos.push({ fecha: fechaFormateada, monto: pago.monto });
-        mesData.totalAbonado += pago.monto; 
+        mesData.abonos.push({ fecha: fechaFormateada, monto: montoNumerico });
+        mesData.totalAbonado += montoNumerico; // <-- Usar el valor numérico
       } else {
         mesData.fechaSimple = fechaFormateada;
       }
@@ -254,17 +257,20 @@ export default function PagosPage() {
         ...alumno, 
         meses: MESES_CUADERNO.map(mes => {
           const mesData = pagosDelAlumno.get(mes) || { fechaSimple: null, abonos: [], totalAbonado: 0 };
-          const precio = alumno.precio || 0;
+          
+          // ✅ **CORRECCIÓN 2: Convertir a número para comparar**
+          const precio = Number(alumno.precio) || 0; 
 
           let esDiciembrePagado = false;
           if (mes === MES_DICIEMBRE) {
+            // Comparación numérica segura (con margen de 0.01 por decimales)
             esDiciembrePagado = mesData.totalAbonado >= (precio - 0.01);
           }
 
           return {
             mes: mes, 
             ...mesData,
-            esDiciembrePagado, // <-- AHORA SOLO INDICA SI ESTÁ PAGADO O NO
+            esDiciembrePagado,
           };
         })
       };
@@ -303,27 +309,32 @@ export default function PagosPage() {
   }, [pagos, cardMonthFilter]);
 
   const totalPagado = useMemo(() => 
-    pagosParaTarjetas.filter((p) => p.estado === "pagado").reduce((sum, p) => sum + p.monto, 0),
+    pagosParaTarjetas
+      .filter((p) => p.estado === "pagado")
+      .reduce((sum, p) => sum + (Number(p.monto) || 0), 0), // ✅ **CORRECCIÓN 3**
   [pagosParaTarjetas]);
   
   // --- LÓGICA DE "PENDIENTE" CORREGIDA ---
   const totalPendiente = useMemo(() => {
     // 1. Total teórico de TODOS los alumnos (precio * 11 meses)
     const totalTeoricoAnual = alumnos.reduce((sum, alumno) => {
-      return sum + (alumno.precio || 0) * 11; // 11 meses (Feb-Dic)
+      // ✅ **CORRECCIÓN 4: Forzar conversión a número**
+      return sum + (Number(alumno.precio) || 0) * 11; 
     }, 0);
 
     // 2. Total pagado de TODO el año (SOLO DE ESTE AÑO)
     const totalPagadoAnual = pagos
-      .filter(p => p.estado === 'pagado' && p.mes.includes(ANIO_ESCOLAR)) // <-- FILTRO DE AÑO AÑADIDO
-      .reduce((sum, p) => sum + p.monto, 0);
+      .filter(p => p.estado === 'pagado' && p.mes.includes(ANIO_ESCOLAR)) 
+      .reduce((sum, p) => sum + (Number(p.monto) || 0), 0); // ✅ **CORRECCIÓN 5**
 
     // Lógica por Mes
     if (cardMonthFilter !== "Todos") {
-      const totalTeoricoDelMes = alumnos.reduce((sum, alumno) => sum + (alumno.precio || 0), 0);
+      // ✅ **CORRECCIÓN 6: Forzar conversión a número**
+      const totalTeoricoDelMes = alumnos.reduce((sum, alumno) => sum + (Number(alumno.precio) || 0), 0);
+      
       const totalPagadoEseMes = pagos
         .filter(p => p.mes === cardMonthFilter && p.estado === 'pagado')
-        .reduce((sum, p) => sum + p.monto, 0);
+        .reduce((sum, p) => sum + (Number(p.monto) || 0), 0); // ✅ **CORRECCIÓN 7**
       
       const saldo = totalTeoricoDelMes - totalPagadoEseMes;
       return saldo < 0 ? 0 : saldo;
@@ -333,7 +344,7 @@ export default function PagosPage() {
     const saldoAnual = totalTeoricoAnual - totalPagadoAnual;
     return saldoAnual < 0 ? 0 : saldoAnual;
 
-  }, [pagos, alumnos, cardMonthFilter]); // <-- BUG CORREGIDO
+  }, [pagos, alumnos, cardMonthFilter, ANIO_ESCOLAR]); // ✅ **CORRECCIÓN 8: DEPENDENCIA AÑADIDA**
   
   const totalRegistros = useMemo(() =>
     pagosParaTarjetas.length,
@@ -367,7 +378,6 @@ export default function PagosPage() {
 
   // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
   if (loading) {
-    // ... (igual)
     return (
       <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
         <div className="flex justify-center items-center h-64"><p>Cargando pagos...</p></div>
@@ -375,7 +385,6 @@ export default function PagosPage() {
     );
   }
   if (error) {
-    // ... (igual)
     return (
       <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
         <div className="flex justify-center items-center h-64"><p className="text-destructive">Error: {error}</p></div>
@@ -390,7 +399,9 @@ export default function PagosPage() {
         
         {/* --- NUEVO FILTRO DE MES PARA TARJETAS --- */}
         <div className="flex justify-end">
-          <Select onValueChange={setCardMonthFilter} defaultValue={cardMonthFilter}>
+          
+          {/* ✅ **CORRECCIÓN: Se usa 'value' en lugar de 'defaultValue'** */}
+          <Select onValueChange={setCardMonthFilter} value={cardMonthFilter}>
             <SelectTrigger className="w-full md:w-[240px]">
               <SelectValue placeholder="Filtrar totales por mes" />
             </SelectTrigger>
@@ -414,7 +425,7 @@ export default function PagosPage() {
             <CardHeader className="pb-2">
               <CardDescription className="text-xs">
                 {cardMonthFilter === "Todos" ? "Total Pendiente (Anual)" : `Pendiente (${cardMonthFilter.split(" ")[0]})`}
-              </CardDescription>
+              </CardDescription> 
             </CardHeader>
             <CardContent><div className="text-xl md:text-2xl font-bold text-orange-600">C${totalPendiente.toLocaleString()}</div></CardContent>
           </Card>
@@ -436,7 +447,6 @@ export default function PagosPage() {
                 className="pl-9 w-full"
               />
             </div>
-            {/* --- FILTRO DE ESTADO ELIMINADO --- */}
           </div>
           
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -445,7 +455,7 @@ export default function PagosPage() {
                 onClick={() => setViewMode(viewMode === 'lista' ? 'cuaderno' : 'lista')}
                 className="w-full sm:w-auto"
                 title={viewMode === 'lista' ? "Cambiar a Vista de Resumen Anual" : "Cambiar a Vista de Historial"}
-             >
+              >
                 {viewMode === 'lista' ? 
                   <LayoutGrid className="h-4 w-4 mr-2" /> : 
                   <List className="h-4 w-4 mr-2" />
@@ -482,14 +492,12 @@ export default function PagosPage() {
                         <TableHead>Mes</TableHead>
                         <TableHead>Monto</TableHead>
                         <TableHead>Fecha de Pago</TableHead>
-                        {/* <TableHead>Estado</TableHead> <-- ELIMINADO */}
                         <TableHead className="text-right">Acciones</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredPagos.length === 0 && (
                         <TableRow>
-                          {/* Colspan reducido a 5 */}
                           <TableCell colSpan={5} className="text-center text-muted-foreground">
                             No se encontraron pagos con esos filtros.
                           </TableCell>
@@ -499,9 +507,8 @@ export default function PagosPage() {
                         <TableRow key={pago.id}>
                           <TableCell className="font-medium whitespace-nowrap">{pago.alumnoNombre}</TableCell>
                           <TableCell className="whitespace-nowrap">{pago.mes}</TableCell>
-                          <TableCell className="whitespace-nowrap">C${formatCurrency(pago.monto)}</TableCell>
+                          <TableCell className="whitespace-nowrap">C${formatCurrency(Number(pago.monto))}</TableCell>
                           <TableCell className="whitespace-nowrap">{pago.fecha ? new Date(pago.fecha + 'T00:00:00').toLocaleDateString('es-NI') : "-"}</TableCell>
-                          {/* ESTADO ELIMINADO */}
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Link href={`/dashboard/propietario/pagos/${pago.id}`}>
@@ -549,7 +556,7 @@ export default function PagosPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>{
-                       cuadernoData.sortedGroupKeys.length === 0 ? (
+                      cuadernoData.sortedGroupKeys.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={13} className="text-center text-muted-foreground">
                             No se encontraron alumnos con ese término de búsqueda.
@@ -569,14 +576,13 @@ export default function PagosPage() {
                                 {alumno.nombre}
                               </TableCell>
                               <TableCell className="font-medium w-[100px] min-w-[100px] md:w-[120px] md:min-w-[120px]">
-                                C$ {formatCurrency(alumno.precio || 0)}
+                                C$ {formatCurrency(Number(alumno.precio) || 0)}
                               </TableCell>
                               {alumno.meses.map((mesData: { 
                                 mes: string, 
                                 fechaSimple: string | null, 
                                 abonos: { fecha: string, monto: number }[],
                                 esDiciembrePagado: boolean,
-                                ultimaFechaDiciembre: string | null // <-- Esta propiedad ya no se usa
                               }) => (
                                 <TableCell key={mesData.mes} className="text-center align-top">
                                   {mesData.mes === MES_DICIEMBRE ? (
@@ -586,7 +592,6 @@ export default function PagosPage() {
                                         {mesData.abonos.map((abono: { fecha: string, monto: number }, idx: number) => (
                                           <Badge 
                                             key={idx} 
-                                            // Cambia el color si Diciembre está pagado
                                             variant={mesData.esDiciembrePagado ? "default" : "secondary"} 
                                             className="text-xs whitespace-nowrap"
                                           >

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react"; 
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,11 +22,29 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+// import type { Personal } from "../page"; // Importamos el tipo Personal
 
 // --- TIPO PARA EL VEHÍCULO CARGADO ---
 type Vehiculo = {
   id: string;
   nombre: string;
+};
+
+// --- TIPO PERSONAL (ACTUALIZADO) ---
+// Definimos el tipo aquí para no tener que importarlo
+export type Personal = {
+  id: string;
+  nombre: string;
+  puesto: string;
+  contacto: string;
+  salario: number;
+  fechaContratacion: string; 
+  estado: "activo" | "inactivo" | "eliminado";
+  vehiculoId: string | null;
+  vehiculo?: { 
+    id: string;
+    nombre: string;
+  }
 };
 
 // --- Menú (El mismo de siempre) ---
@@ -41,38 +59,57 @@ const menuItems: MenuItem[] = [
   { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ];
 
-export default function NuevoPersonalPage() {
+export default function EditarPersonalPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const params = useParams();
+  const id = params.id as string;
+
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
 
-  const [formData, setFormData] = useState({
-    nombre: "",
-    puesto: "",
-    contacto: "",
-    salario: "",
-    fechaContratacion: new Date().toISOString().split('T')[0], 
-    vehiculoId: "N/A", 
-  });
+  const [formData, setFormData] = useState<Partial<Personal>>({});
 
-  // --- CARGAR VEHÍCULOS AL INICIAR ---
+  // --- Cargar datos del empleado Y ADEMÁS los vehículos ---
   useEffect(() => {
-    const fetchVehiculos = async () => {
+    if (!id) return;
+    const fetchDatos = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`);
-        if (!response.ok) throw new Error("No se pudieron cargar los vehículos");
-        const data: Vehiculo[] = await response.json();
-        setVehiculos(data);
+        const [personalRes, vehiculosRes] = await Promise.all([
+           fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal/${id}`),
+           fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`)
+        ]);
+        
+        if (!personalRes.ok) {
+          throw new Error("No se pudo encontrar al empleado");
+        }
+         if (!vehiculosRes.ok) {
+          throw new Error("No se pudieron cargar los vehículos");
+        }
+
+        const data: Personal = await personalRes.json();
+        const dataVehiculos: Vehiculo[] = await vehiculosRes.json();
+        
+        setVehiculos(dataVehiculos);
+        setFormData({
+          ...data,
+          fechaContratacion: data.fechaContratacion ? new Date(data.fechaContratacion).toISOString().split('T')[0] : "", 
+          salario: data.salario || 0,
+          vehiculoId: data.vehiculoId || "N/A" // <-- CAMBIADO
+        });
       } catch (err: any) {
-        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+        toast({ title: "Error al cargar", description: (err as Error).message, variant: "destructive" });
+        router.push("/dashboard/propietario/personal");
+      } finally {
+        setLoadingData(false);
       }
     };
-    fetchVehiculos();
-  }, [toast]);
+    fetchDatos();
+  }, [id, router, toast]);
 
-
+  // --- Manejadores de formulario ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -82,42 +119,32 @@ export default function NuevoPersonalPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Enviar Personal a la API ---
+  // --- Enviar actualización a la API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     const payload = {
-      ...formData,
-      salario: parseFloat(formData.salario) || undefined, 
-      vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId, 
+      nombre: formData.nombre,
+      puesto: formData.puesto,
+      contacto: formData.contacto,
+      salario: Number(formData.salario) || undefined,
+      fechaContratacion: formData.fechaContratacion,
+      vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId, // <-- CAMBIADO
     };
 
-    if (!payload.puesto) {
-       toast({ title: "Error de validación", description: "Por favor, selecciona un puesto.", variant: "destructive" });
-       setLoading(false);
-       return;
-    }
-    
-    // Validar que el vehiculoId esté seleccionado si no es "N/A"
-    if (payload.vehiculoId !== null && !payload.vehiculoId) {
-       toast({ title: "Error de validación", description: "Por favor, selecciona un vehículo.", variant: "destructive" });
-       setLoading(false);
-       return;
-    }
-
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal`, {
-        method: 'POST',
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal/${id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo registrar al empleado");
+        throw new Error("No se pudo actualizar el empleado");
       }
 
-      toast({ title: "¡Empleado Registrado!", description: "El empleado se ha guardado correctamente." });
+      toast({ title: "¡Actualizado!", description: "El empleado se ha guardado correctamente." });
       router.push("/dashboard/propietario/personal");
 
     } catch (err: any) {
@@ -127,8 +154,16 @@ export default function NuevoPersonalPage() {
     }
   };
 
+  if (loadingData) {
+    return (
+      <DashboardLayout title="Editar Personal" menuItems={menuItems}>
+        <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+      </DashboardLayout>
+    );
+  }
+
   return (
-    <DashboardLayout title="Registrar Personal" menuItems={menuItems}>
+    <DashboardLayout title="Editar Personal" menuItems={menuItems}>
       <div className="space-y-6">
         <Link href="/dashboard/propietario/personal">
           <Button variant="ghost" size="sm">
@@ -139,8 +174,8 @@ export default function NuevoPersonalPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Registrar Nuevo Empleado</CardTitle>
-            <CardDescription>Completa los detalles del miembro del personal.</CardDescription>
+            <CardTitle>Editar Empleado</CardTitle>
+            <CardDescription>Ajusta los detalles del miembro del personal.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -152,7 +187,7 @@ export default function NuevoPersonalPage() {
                     id="nombre" 
                     name="nombre"
                     placeholder="Ej: Ana García" 
-                    value={formData.nombre} 
+                    value={formData.nombre || ''} 
                     onChange={handleChange} 
                     required 
                   />
@@ -161,7 +196,7 @@ export default function NuevoPersonalPage() {
                   <Label htmlFor="puesto">Puesto *</Label>
                   <Select 
                     name="puesto" 
-                    value={formData.puesto} 
+                    value={formData.puesto || ''} 
                     onValueChange={(value) => handleSelectChange("puesto", value)}
                     required
                   >
@@ -184,7 +219,7 @@ export default function NuevoPersonalPage() {
                     name="contacto"
                     type="tel"
                     placeholder="Ej: 8888-8888" 
-                    value={formData.contacto} 
+                    value={formData.contacto || ''} 
                     onChange={handleChange} 
                   />
                 </div>
@@ -196,7 +231,7 @@ export default function NuevoPersonalPage() {
                     type="number" 
                     step="0.01"
                     placeholder="Ej: 8000.00" 
-                    value={formData.salario} 
+                    value={formData.salario || ''} 
                     onChange={handleChange} 
                   />
                 </div>
@@ -209,23 +244,23 @@ export default function NuevoPersonalPage() {
                     id="fechaContratacion" 
                     name="fechaContratacion" 
                     type="date" 
-                    value={formData.fechaContratacion} 
+                    value={formData.fechaContratacion || ''} 
                     onChange={handleChange} 
                   />
                 </div>
-                {/* --- SELECTOR DE VEHÍCULO (DINÁMICO) --- */}
+                 {/* --- SELECTOR DE VEHÍCULO (DINÁMICO) --- */}
                 <div className="space-y-2">
                   <Label htmlFor="vehiculoId">Asignar Vehículo</Label>
                   <Select 
-                    name="vehiculoId" 
-                    value={formData.vehiculoId} 
-                    onValueChange={(value) => handleSelectChange("vehiculoId", value)}
+                    name="vehiculoId" // <-- CAMBIADO
+                    value={formData.vehiculoId || 'N/A'} // <-- CAMBIADO
+                    onValueChange={(value) => handleSelectChange("vehiculoId", value)} // <-- CAMBIADO
                   >
                     <SelectTrigger><SelectValue placeholder="Asignar a un vehículo" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="N/A">N/A (Sin vehículo fijo)</SelectItem>
-                      {/* --- LÍNEA DEL ERROR ELIMINADA --- */}
-                      {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando vehículos...</SelectItem>} */}
+                      {/* --- ARREGLADO --- */}
+                      {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando...</SelectItem>} */}
                       {vehiculos.map(v => (
                         <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
                       ))}
@@ -237,7 +272,7 @@ export default function NuevoPersonalPage() {
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
                   <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Empleado"}
+                  {loading ? "Guardando..." : "Guardar Cambios"}
                 </Button>
                 <Link href="/dashboard/propietario/personal">
                   <Button type="button" variant="outline">Cancelar</Button>

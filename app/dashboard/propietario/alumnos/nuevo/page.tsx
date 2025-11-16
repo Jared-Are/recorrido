@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState } from "react";
+import { useState, useEffect } from "react"; 
 import { useRouter } from "next/navigation";
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
@@ -33,14 +33,15 @@ import {
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown 
+    TrendingDown,
+    Loader2
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
 // --- DEFINICIÓN DEL MENÚ ---
 const menuItems: MenuItem[] = [
-  // ... (Tu menú sigue igual)
+  // ... (Tu menú)
   {
     title: "Gestionar Alumnos",
     description: "Ver y administrar estudiantes",
@@ -107,28 +108,54 @@ const menuItems: MenuItem[] = [
   },
 ];
 
+// --- TIPO PARA EL VEHÍCULO CARGADO ---
+type Vehiculo = {
+  id: string;
+  nombre: string;
+};
 
 export default function NuevoAlumnoPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  
+  // --- NUEVO ESTADO PARA LOS VEHÍCULOS ---
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+  
   const [formData, setFormData] = useState({
     nombre: "",
     tutor: "",
     grado: "",
     contacto: "",
     direccion: "",
-    recorridoId: "",
-    precio: "", // Sigue siendo el precio FAMILIAR
+    vehiculoId: "", // <-- CAMBIADO
+    precio: "", 
     hermanos: false,
   });
 
   const [otrosHijos, setOtrosHijos] = useState<
-    { nombre: string; grado: string; recorridoId: string }[]
+    { nombre: string; grado: string; vehiculoId: string }[] // <-- CAMBIADO
   >([]);
 
+  // --- CARGAR VEHÍCULOS AL INICIAR ---
+  useEffect(() => {
+    const fetchVehiculos = async () => {
+      try {
+        // Traemos solo los vehículos 'activos' para asignarlos
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`);
+        if (!response.ok) throw new Error("No se pudieron cargar los vehículos");
+        const data: Vehiculo[] = await response.json();
+        setVehiculos(data);
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
+    };
+    fetchVehiculos();
+  }, [toast]);
+
+
   const agregarHijo = () => {
-    setOtrosHijos([...otrosHijos, { nombre: "", grado: "", recorridoId: "" }]);
+    setOtrosHijos([...otrosHijos, { nombre: "", grado: "", vehiculoId: "" }]); 
   };
 
   const eliminarHijo = (index: number) => {
@@ -139,7 +166,7 @@ export default function NuevoAlumnoPage() {
 
   const handleChangeHijo = (
     index: number,
-    field: "nombre" | "grado" | "recorridoId",
+    field: "nombre" | "grado" | "vehiculoId", // <-- CAMBIADO
     value: string
   ) => {
     const nuevos = [...otrosHijos];
@@ -147,19 +174,17 @@ export default function NuevoAlumnoPage() {
     setOtrosHijos(nuevos);
   };
 
-  // --- GUARDAR EN LA API (CON LÓGICA DE PRECIO CORREGIDA) ---
+  // --- GUARDAR EN LA API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    // --- 1. Calcular el total de alumnos a inscribir ---
     const alumnosAInscribir = [
-      { nombre: formData.nombre, grado: formData.grado, recorridoId: formData.recorridoId },
+      { nombre: formData.nombre, grado: formData.grado, vehiculoId: formData.vehiculoId }, // <-- CAMBIADO
       ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
     ];
     const numeroDeHijos = alumnosAInscribir.length;
 
-    // --- 2. Calcular el precio individual ---
     const precioFamiliar = Number(formData.precio);
     if (precioFamiliar <= 0) {
         toast({ title: "Error", description: "El precio familiar debe ser mayor a cero.", variant: "destructive" });
@@ -167,27 +192,23 @@ export default function NuevoAlumnoPage() {
         return;
     }
 
-    // --- ¡NUEVA VALIDACIÓN DE NÚMERO ENTERO! ---
-    // (Arregla Problema #1 y #2)
     if (precioFamiliar % numeroDeHijos !== 0) {
         toast({ 
           title: "Error de Precio", 
           description: `El precio familiar (C$ ${precioFamiliar}) no es divisible entre el número de hijos (${numeroDeHijos}). Ajuste el precio a un monto que resulte en un número entero por alumno.`, 
           variant: "destructive",
-          duration: 8000 // Más tiempo para leer
+          duration: 8000 
         });
         setLoading(false);
         return;
     }
-    // Si la validación pasa, calculamos el precio
     const precioIndividual = precioFamiliar / numeroDeHijos;
 
     try {
       const promesasDeCreacion = alumnosAInscribir.map((alumno) => {
         
-        // Validar que el grado y recorrido del alumno (principal o hermano) esté seleccionado
-        if (!alumno.grado || !alumno.recorridoId) {
-          throw new Error(`Por favor, selecciona un grado y un recorrido para ${alumno.nombre || 'el alumno'}.`);
+        if (!alumno.grado || !alumno.vehiculoId) { // <-- CAMBIADO
+          throw new Error(`Por favor, selecciona un grado y un vehículo para ${alumno.nombre || 'el alumno'}.`);
         }
 
         const payload = {
@@ -196,8 +217,8 @@ export default function NuevoAlumnoPage() {
           tutor: formData.tutor,
           contacto: formData.contacto,
           direccion: formData.direccion,
-          recorridoId: alumno.recorridoId, // <-- CORREGIDO: Usa el recorrido de cada alumno
-          precio: precioIndividual, // <-- Usamos el precio dividido (que ya sabemos es entero)
+          vehiculoId: alumno.vehiculoId, // <-- CAMBIADO
+          precio: precioIndividual, 
           activo: true, 
         };
 
@@ -214,8 +235,6 @@ export default function NuevoAlumnoPage() {
 
       const algunaFallo = responses.some((res) => !res.ok);
       if (algunaFallo) {
-        // Mensaje de error más genérico, ya que la validación de precio se hizo antes.
-        // Esto SÍ podría ser por un duplicado.
         throw new Error("Error al registrar a uno o más alumnos. Revisa que los datos no estén duplicados.");
       }
 
@@ -259,6 +278,7 @@ export default function NuevoAlumnoPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
+                {/* ... (Nombre, Tutor, Dirección, Grado 1, Contacto - sin cambios) ... */}
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre Completo * (Hijo 1)</Label>
                   <Input id="nombre" placeholder="Ej: Juan Pérez López" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
@@ -298,19 +318,22 @@ export default function NuevoAlumnoPage() {
                 </div>
               </div>
 
+              {/* --- SELECTOR DE RECORRIDO/VEHÍCULO (HIJO 1) --- */}
               <div className="space-y-2">
-                <Label>Asignar Recorrido *</Label>
+                <Label>Asignar Vehículo * (Hijo 1)</Label>
                 <Select
-                  value={formData.recorridoId}
-                  onValueChange={(value) => setFormData({ ...formData, recorridoId: value })}
+                  value={formData.vehiculoId} // <-- CAMBIADO
+                  onValueChange={(value) => setFormData({ ...formData, vehiculoId: value })} // <-- CAMBIADO
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un recorrido" />
+                    <SelectValue placeholder="Selecciona un vehículo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="recorridoA">Recorrido A</SelectItem>
-                    <SelectItem value="recorridoB">Recorrido B</SelectItem>
+                    {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando vehículos...</SelectItem>} <-- LÍNEA ELIMINADA */}
+                    {vehiculos.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -328,7 +351,7 @@ export default function NuevoAlumnoPage() {
                   checked={formData.hermanos}
                   onCheckedChange={(checked) => {
                     setFormData({ ...formData, hermanos: checked === true });
-                    if (checked) setOtrosHijos([{ nombre: "", grado: "", recorridoId: "" }]);
+                    if (checked) setOtrosHijos([{ nombre: "", grado: "", vehiculoId: "" }]); // <-- CAMBIADO
                     else setOtrosHijos([]);
                   }}
                   id="hermanos-check"
@@ -346,7 +369,6 @@ export default function NuevoAlumnoPage() {
                         <Input placeholder={`Ej: Pedro Pérez`} value={hijo.nombre} onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} />
                       </div>
                       
-                      {/* --- ¡ARREGLADO! (Problema #3) --- */}
                       <div className="space-y-2">
                         <Label>Grado (Hijo {index + 2})</Label>
                         <Select value={hijo.grado} onValueChange={(value) => handleChangeHijo(index, "grado", value)}>
@@ -365,21 +387,22 @@ export default function NuevoAlumnoPage() {
                         </Select>
                       </div>
                       
-                      {/* --- ¡AÑADIDO! Selector de Recorrido para Hermanos --- */}
+                      {/* --- SELECTOR DE VEHÍCULO (HERMANOS) --- */}
                       <div className="space-y-2">
-                        <Label>Recorrido (Hijo {index + 2})</Label>
+                        <Label>Vehículo (Hijo {index + 2})</Label>
                         <Select 
-                          value={hijo.recorridoId} 
-                          onValueChange={(value) => handleChangeHijo(index, "recorridoId", value)}
+                          value={hijo.vehiculoId} // <-- CAMBIADO
+                          onValueChange={(value) => handleChangeHijo(index, "vehiculoId", value)} // <-- CAMBIADO
                         >
-                          <SelectTrigger><SelectValue placeholder="Selecciona un recorrido" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder="Selecciona un vehículo" /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="recorridoA">Recorrido A</SelectItem>
-                            <SelectItem value="recorridoB">Recorrido B</SelectItem>
+                            {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando...</SelectItem>} <-- LÍNEA ELIMINADA */}
+                            {vehiculos.map(v => (
+                              <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
-                      {/* --- FIN DEL CAMBIO --- */}
 
                       <Button type="button" variant="destructive" size="icon" onClick={() => eliminarHijo(index)} className="mt-6">
                         <Trash2 className="h-4 w-4" />

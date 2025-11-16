@@ -1,163 +1,327 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { 
     Plus, 
-    Pencil, 
-    Trash2,
+    Search, 
     Users, 
     DollarSign, 
     Bus, 
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown 
+    TrendingDown, 
+    Pencil, 
+    Trash2, 
+    Wrench, // Icono para Mantenimiento
+    CheckCircle, // Icono para Activo
+    // XCircle // Icono para Inactivo (ya no se usa)
 } from "lucide-react"
-import { mockVehiculos, type Vehiculo } from "@/lib/mock-data"
+import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import Link from "next/link" // <-- Importado Link
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+// Importamos RequestInit para tipar la opción de fetch
+import type { RequestInit } from "next/dist/server/web/spec-extension/request"
 
-// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+// --- DEFINICIÓN DEL TIPO VEHÍCULO (CORREGIDO) ---
+export type Vehiculo = {
+  id: string;
+  nombre: string;
+  placa: string;
+  marca: string;
+  modelo: string;
+  anio: number;
+  capacidad: number;
+  // 'recorridoAsignado' ya no existe
+  estado: "activo" | "en mantenimiento" | "eliminado"; // <-- "inactivo" eliminado
+};
+
+// --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
-  {
-    title: "Gestionar Alumnos",
-    description: "Ver y administrar estudiantes",
-    icon: Users,
-    href: "/dashboard/propietario/alumnos",
-    color: "text-blue-600",
-    bgColor: "bg-blue-50 dark:bg-blue-900/20",
-  },
-  {
-    title: "Gestionar Pagos",
-    description: "Ver historial y registrar pagos",
-    icon: DollarSign,
-    href: "/dashboard/propietario/pagos",
-    color: "text-green-600",
-    bgColor: "bg-green-50 dark:bg-green-900/20",
-  },
-  {
-    title: "Gestionar Gastos",
-    description: "Control de combustible, salarios, etc.",
-    icon: TrendingDown,
-    href: "/dashboard/propietario/gastos",
-    color: "text-pink-600",
-    bgColor: "bg-pink-50 dark:bg-pink-900/20",
-  },
-  {
-    title: "Gestionar Personal",
-    description: "Administrar empleados y choferes",
-    icon: Users,
-    href: "/dashboard/propietario/personal",
-    color: "text-purple-600",
-    bgColor: "bg-purple-50 dark:bg-purple-900/20",
-  },
-  {
-    title: "Gestionar Vehículos",
-    description: "Administrar flota de vehículos",
-    icon: Bus,
-    href: "/dashboard/propietario/vehiculos",
-    color: "text-orange-600",
-    bgColor: "bg-orange-50 dark:bg-orange-900/20",
-  },
-  {
-    title: "Gestionar Usuarios",
-    description: "Administrar accesos al sistema",
-    icon: UserCog,
-    href: "/dashboard/propietario/usuarios",
-    color: "text-indigo-600",
-    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
-  },
-  {
-    title: "Enviar Avisos",
-    description: "Comunicados a tutores y personal",
-    icon: Bell,
-    href: "/dashboard/propietario/avisos",
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
-  },
-  {
-    title: "Generar Reportes",
-    description: "Estadísticas y análisis",
-    icon: BarChart3,
-    href: "/dashboard/propietario/reportes",
-    color: "text-red-600",
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-  },
-];
+  { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
+  { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
+  { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
+  { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
+  { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
+  { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
+  { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
+  { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
+]
 
 export default function VehiculosPage() {
-  const [vehiculos, setVehiculos] = useState<Vehiculo[]>(mockVehiculos)
+  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([])
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("")
+  const [estadoFilter, setEstadoFilter] = useState("activo"); // Filtro por defecto
   const { toast } = useToast()
 
-  const handleDelete = (id: string) => {
-    if (window.confirm("¿Estás seguro de eliminar este vehículo?")) {
-      setVehiculos(vehiculos.filter((v) => v.id !== id))
-      toast({ title: "Vehículo eliminado", description: "El registro ha sido eliminado." })
+  // --- Cargar Vehículos desde la API ---
+  useEffect(() => {
+    const fetchVehiculos = async () => {
+      setLoading(true);
+      try {
+        // El backend ahora filtra por 'activo' o 'en mantenimiento'
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=${estadoFilter}`);
+        if (!response.ok) {
+          throw new Error("No se pudo cargar la lista de vehículos");
+        }
+        const data: Vehiculo[] = await response.json();
+        setVehiculos(data);
+      } catch (err: any) {
+        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchVehiculos();
+  }, [toast, estadoFilter]); // Se vuelve a cargar si cambia el filtro de estado
+
+  // --- Filtrar por Búsqueda ---
+  const filteredVehiculos = useMemo(() => {
+    return vehiculos.filter(
+      (v) =>
+        v.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.placa.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (v.marca && v.marca.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  }, [vehiculos, searchTerm]);
+
+  // --- Cálculos ---
+  const totalVehiculos = vehiculos.length;
+  const totalCapacidad = vehiculos.reduce((sum, v) => sum + (v.capacidad || 0), 0);
+
+  // --- Helpers de UI (colores de badges) (Inactivo eliminado) ---
+  const getEstadoBadgeVariant = (estado: string): "default" | "secondary" | "destructive" | "outline" => {
+    switch (estado) {
+      case "activo": return "default"
+      case "en mantenimiento": return "destructive"
+      // case "inactivo": return "secondary" // <-- ELIMINADO
+      default: return "outline"
     }
   }
 
+  // --- Lógica de Acciones (Conectada a la API) ---
+  const cambiarEstadoVehiculo = async (id: string, nuevoEstado: "activo" | "en mantenimiento" | "eliminado") => { // <-- "inactivo" eliminado
+    const vehiculo = vehiculos.find(v => v.id === id);
+    if (!vehiculo) return;
+
+    // --- Confirmación ---
+    let confirmMessage = `¿Estás seguro de mover "${vehiculo.nombre}" a ${nuevoEstado}?`;
+    if (nuevoEstado === 'eliminado') {
+      confirmMessage = `¿Estás seguro de ELIMINAR PERMANENTEMENTE a "${vehiculo.nombre}"? Esta acción no se puede deshacer.`
+    }
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    // --- FIN ---
+
+    try {
+      
+      // ======================= INICIO DE LA CORRECCIÓN =======================
+      const method = nuevoEstado === 'eliminado' ? 'DELETE' : 'PATCH';
+
+      // 1. Define el objeto de opciones con el método
+      const requestOptions: RequestInit = {
+          method: method,
+      };
+
+      // 2. Añade body y headers SOLO si NO es 'eliminado' (es decir, si es PATCH)
+      if (nuevoEstado !== 'eliminado') {
+          requestOptions.headers = { 'Content-Type': 'application/json' };
+          requestOptions.body = JSON.stringify({ estado: nuevoEstado });
+      }
+      
+      // 3. Pasa el objeto de opciones a fetch
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`, 
+        requestOptions
+      );
+      // ======================== FIN DE LA CORRECCIÓN =========================
+
+      if (!response.ok) {
+        if (method === 'DELETE') {
+           const errData = await response.json();
+           if (errData.message && errData.message.includes('violates foreign key constraint')) {
+             throw new Error("No se puede eliminar: El vehículo tiene alumnos, personal o gastos asignados.");
+           } else {
+             throw new Error(errData.message || "No se pudo eliminar el vehículo.");
+           }
+        }
+        throw new Error("No se pudo actualizar el estado del vehículo");
+      }
+      
+      setVehiculos(prev => prev.filter(v => v.id !== id)); 
+
+      let mensaje = "";
+      if (nuevoEstado === "eliminado") mensaje = "Vehículo eliminado permanentemente";
+      // if (nuevoEstado === "inactivo") mensaje = "Vehículo desactivado correctamente"; // <-- ELIMINADO
+      if (nuevoEstado === "activo") mensaje = "Vehículo activado correctamente";
+      if (nuevoEstado === "en mantenimiento") mensaje = "Vehículo marcado en mantenimiento";
+
+      toast({
+        title: "Acción completada",
+        description: `${mensaje}: ${vehiculo?.nombre}`,
+      });
+
+    } catch (err: any) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    }
+  }
+  
   return (
     <DashboardLayout title="Gestión de Vehículos" menuItems={menuItems}>
       <div className="space-y-6">
-        <div className="flex justify-end">
-          <Link href="/dashboard/propietario/vehiculos/nuevo">
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nuevo Vehículo
-              </Button>
+
+        {/* --- TARJETAS --- */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="text-xs">
+                {/* Texto del filtro actualizado */}
+                Total Vehículos ({estadoFilter === 'activo' ? 'Activos' : 'En Mantenimiento'})
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl md:text-2xl font-bold">{totalVehiculos}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="text-xs">Capacidad Total (Asientos)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl md:text-2xl font-bold text-blue-600">{totalCapacidad}</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* --- BOTÓN Y BUSCADOR --- */}
+        <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
+          <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, placa, marca..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 w-full"
+              />
+            </div>
+             {/* --- FILTRO DE ESTADO (CORREGIDO) --- */}
+             <Select onValueChange={setEstadoFilter} value={estadoFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Filtrar por estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="activo">Activos</SelectItem>
+                <SelectItem value="en mantenimiento">En Mantenimiento</SelectItem>
+                {/* <SelectItem value="inactivo">Inactivos</SelectItem> <-- ELIMINADO */}
+              </SelectContent>
+            </Select>
+          </div>
+          <Link href="/dashboard/propietario/vehiculos/nuevo" className="w-full sm:w-auto">
+            <Button className="w-full">
+              <Plus className="h-4 w-4 mr-2" />
+              Registrar Vehículo
+            </Button>
           </Link>
         </div>
 
+        {/* --- TABLA (CORREGIDA) --- */}
         <Card>
           <CardHeader>
-            <CardTitle>Flota de Vehículos</CardTitle>
-            <CardDescription>Gestiona los vehículos del recorrido escolar</CardDescription>
+            <CardTitle>Flota de Vehículos ({estadoFilter === 'activo' ? 'Activos' : 'En Mantenimiento'})</CardTitle>
+            <CardDescription>Lista de todos los vehículos de la empresa.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Placa</TableHead>
-                  <TableHead>Modelo</TableHead>
-                  <TableHead>Chofer Asignado</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {vehiculos.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell className="font-medium">{v.placa}</TableCell>
-                    <TableCell>{v.modelo}</TableCell>
-                    <TableCell>{v.choferNombre}</TableCell>
-                    <TableCell>
-                      <Badge variant={v.estado === "operativo" ? "default" : "secondary"}>
-                        {v.estado === "operativo" ? "Operativo" : "Mantenimiento"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {/* Este enlace ahora apuntará a la futura página de edición */}
-                        <Link href={`/dashboard/propietario/vehiculos/${v.id}`}>
-                            <Button variant="ghost" size="icon">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Placa</TableHead>
+                    <TableHead>Marca / Modelo</TableHead>
+                    <TableHead>Año</TableHead>
+                    <TableHead>Capacidad</TableHead>
+                    {/* <TableHead>Estado</TableHead> <-- COLUMNA ELIMINADA */}
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading && (
+                    <TableRow>
+                      {/* Colspan reducido a 6 */}
+                      <TableCell colSpan={6} className="text-center h-24">Cargando...</TableCell>
+                    </TableRow>
+                  )}
+                  {!loading && filteredVehiculos.length === 0 && (
+                     <TableRow>
+                      {/* Colspan reducido a 6 */}
+                      <TableCell colSpan={6} className="text-center h-24">No se encontraron vehículos.</TableCell>
+                    </TableRow>
+                  )}
+                  {!loading && filteredVehiculos.map((v) => (
+                    <TableRow key={v.id}>
+                      <TableCell className="font-medium whitespace-nowrap">{v.nombre}</TableCell>
+                      <TableCell className="whitespace-nowrap">{v.placa}</TableCell>
+                      <TableCell className="whitespace-nowrap">{v.marca || "N/A"} / {v.modelo || "N/A"}</TableCell>
+                      <TableCell>{v.anio || "N/A"}</TableCell>
+                      <TableCell>{v.capacidad || "N/A"}</TableCell>
+                      {/* --- CELDA DE ESTADO ELIMINADA --- */}
+                      
+                      {/* --- ACCIONES CORREGIDAS --- */}
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Link href={`/dashboard/propietario/vehiculos/editar/${v.id}`}>
+                            <Button variant="ghost" size="icon" title="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>
-                        </Link>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(v.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                          </Link>
+                          
+                          {/* Botón de estado cambia según el estado actual */}
+                          {v.estado === "activo" && (
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              title="Poner en Mantenimiento"
+                              onClick={() => cambiarEstadoVehiculo(v.id, "en mantenimiento")}
+                            >
+                              <Wrench className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {v.estado === "en mantenimiento" && ( // <-- LÓGICA SIMPLIFICADA
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              title="Activar"
+                              onClick={() => cambiarEstadoVehiculo(v.id, "activo")}
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                          )}
+                          
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            title="Eliminar Permanentemente"
+                            onClick={() => cambiarEstadoVehiculo(v.id, "eliminado")}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      {/* --- FIN DE ACCIONES --- */}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </div>
