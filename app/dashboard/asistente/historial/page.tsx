@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { AsistenteLayout } from "@/components/asistente-layout"
 import {
   Card,
@@ -17,32 +17,76 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { mockAsistencias } from "@/lib/mock-data"
-import { CheckCircle, XCircle, ChevronsUpDown } from "lucide-react"
+import { CheckCircle, XCircle, ChevronsUpDown, Loader2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+
+// --- Tipos para el backend ---
+type RegistroHistorial = {
+  id: string;
+  alumnoNombre: string;
+  presente: boolean;
+};
+
+type DiaHistorial = {
+  fecha: string;
+  registros: RegistroHistorial[];
+};
+
+// --- Función helper para generar meses ---
+const generarMeses = () => {
+  const meses = [];
+  const fechaActual = new Date();
+  for (let i = 0; i < 6; i++) {
+    const fecha = new Date(fechaActual.getFullYear(), fechaActual.getMonth() - i, 1);
+    const valor = fecha.toISOString().slice(0, 7); // "YYYY-MM"
+    const etiqueta = fecha.toLocaleDateString("es-MX", { month: "long", year: "numeric" });
+    meses.push({ valor, etiqueta: etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1) });
+  }
+  return meses;
+};
 
 export default function HistorialPage() {
-  const [selectedMonth, setSelectedMonth] = useState("2025-01")
-  const [openDay, setOpenDay] = useState<string | null>(null)
+  const { toast } = useToast();
+  const mesesDisponibles = generarMeses();
+  
+  const [selectedMonth, setSelectedMonth] = useState(mesesDisponibles[0].valor); // "YYYY-MM"
+  const [loading, setLoading] = useState(true);
+  const [openDay, setOpenDay] = useState<string | null>(null);
+  const [asistenciasPorDia, setAsistenciasPorDia] = useState<Record<string, RegistroHistorial[]>>({});
 
-  // Filtrar asistencias por mes
-  const asistenciasDelMes = mockAsistencias.filter((a) =>
-    a.fecha.startsWith(selectedMonth)
-  )
+  // --- 1. Cargar historial cuando el mes cambie ---
+  useEffect(() => {
+    const fetchHistorial = async () => {
+      setLoading(true);
+      setAsistenciasPorDia({}); // Limpia los datos anteriores
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/historial?mes=${selectedMonth}`);
+        if (!response.ok) throw new Error("No se pudo cargar el historial");
 
-  // Agrupar por día
-  const asistenciasPorDia = asistenciasDelMes.reduce((acc, asistencia) => {
-    const dia = asistencia.fecha
-    if (!acc[dia]) acc[dia] = []
-    acc[dia].push(asistencia)
-    return acc
-  }, {} as Record<string, typeof mockAsistencias>)
+        const data: DiaHistorial[] = await response.json();
+        
+        // Agrupar por día (el backend ya podría darlo así)
+        const agrupado = data.reduce((acc, dia) => {
+          acc[dia.fecha] = dia.registros;
+          return acc;
+        }, {} as Record<string, RegistroHistorial[]>);
 
-  const diasDelMes = Object.keys(asistenciasPorDia).sort()
-  const toggleDay = (dia: string) => setOpenDay(openDay === dia ? null : dia)
+        setAsistenciasPorDia(agrupado);
+
+      } catch (err: any) {
+        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHistorial();
+  }, [selectedMonth, toast]);
+
+  const diasDelMes = Object.keys(asistenciasPorDia).sort();
+  const toggleDay = (dia: string) => setOpenDay(openDay === dia ? null : dia);
 
   return (
     <AsistenteLayout title="Historial de Asistencia">
-      {/* Mantiene el mismo espaciado que las otras pantallas */}
       <div className="flex flex-col gap-4">
         <Card>
           <CardHeader className="pb-3">
@@ -53,6 +97,7 @@ export default function HistorialPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
+            {/* --- 2. Select dinámico --- */}
             <Select
               onValueChange={setSelectedMonth}
               defaultValue={selectedMonth}
@@ -61,21 +106,36 @@ export default function HistorialPage() {
                 <SelectValue placeholder="Selecciona un mes" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="2025-01">Enero 2025</SelectItem>
-                <SelectItem value="2025-02">Febrero 2025</SelectItem>
-                <SelectItem value="2024-12">Diciembre 2024</SelectItem>
+                {mesesDisponibles.map(mes => (
+                  <SelectItem key={mes.valor} value={mes.valor}>
+                    {mes.etiqueta}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
+            {/* --- 3. Renderizado de datos --- */}
             <div className="space-y-3">
-              {diasDelMes.length > 0 ? (
+              {loading && (
+                <div className="flex justify-center items-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {!loading && diasDelMes.length === 0 && (
+                <p className="text-center text-muted-foreground py-8">
+                  No hay registros para el mes seleccionado.
+                </p>
+              )}
+
+              {!loading && diasDelMes.length > 0 && (
                 diasDelMes.map((dia) => {
-                  const registros = asistenciasPorDia[dia]
-                  const presentes = registros.filter((r) => r.presente).length
-                  const ausentes = registros.length - presentes
+                  const registros = asistenciasPorDia[dia];
+                  const presentes = registros.filter((r) => r.presente).length;
+                  const ausentes = registros.length - presentes;
                   const ausentesNombres = registros
                     .filter((r) => !r.presente)
-                    .map((r) => r.alumnoNombre)
+                    .map((r) => r.alumnoNombre);
 
                   return (
                     <div
@@ -129,10 +189,6 @@ export default function HistorialPage() {
                     </div>
                   )
                 })
-              ) : (
-                <p className="text-center text-muted-foreground py-8">
-                  No hay registros para el mes seleccionado.
-                </p>
               )}
             </div>
           </CardContent>

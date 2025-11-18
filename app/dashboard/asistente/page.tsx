@@ -17,81 +17,120 @@ import {
   Users,
   UserCheck,
   UserX,
-  CalendarCheck,
+  Loader2, // Icono de carga
 } from "lucide-react"
-import {
-  mockAlumnos,
-  mockAvisos,
-  mockAsistencias,
-  mockVehiculos,
-} from "@/lib/mock-data"
+import { useToast } from "@/hooks/use-toast"
+import Link from "next/link"
+
+// --- Tipos para los datos del backend ---
+type Aviso = {
+  id: string;
+  titulo: string;
+};
+
+type ResumenStats = {
+  vehiculo: { placa: string, choferNombre: string };
+  totalAlumnos: number;
+  presentesHoy: number;
+  ausentesHoy: number;
+};
+
+type ResumenDia = {
+  stats: ResumenStats;
+  avisos: Aviso[];
+  esDiaLectivo: boolean;
+  motivoNoLectivo: string | null; // Ej: "Fin de semana", "Vacaciones"
+  asistenciaRegistrada: boolean;
+};
 
 export default function AsistenteDashboard() {
-  const [isWeekend, setIsWeekend] = useState(false)
-  const [avisos] = useState(
-    mockAvisos.filter((a) => a.destinatarios.includes("personal"))
-  )
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [resumen, setResumen] = useState<ResumenDia | null>(null);
 
-  // Datos del día
-  const todayISO = new Date().toISOString().split("T")[0]
-  const asistenciasHoy = mockAsistencias.filter((a) => a.fecha === todayISO)
-  const totalAlumnos = mockAlumnos.length
-  const ausentesHoy = asistenciasHoy.filter((a) => !a.presente).length
-  const presentesHoy = totalAlumnos - ausentesHoy
-  const vehiculoAsignado = mockVehiculos[0]
-
+  // --- 1. Cargar el resumen del día al montar ---
   useEffect(() => {
-    const today = new Date().getDay()
-    if (today === 0 || today === 6) setIsWeekend(true)
-  }, [])
+    const fetchResumen = async () => {
+      setLoading(true);
+      try {
+        // Un solo endpoint que trae toda la lógica de negocio
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/resumen-hoy`);
+        if (!response.ok) throw new Error("No se pudo cargar el resumen");
+        
+        const data: ResumenDia = await response.json();
+        setResumen(data);
+        
+      } catch (err: any) {
+        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchResumen();
+  }, [toast]);
 
   const todayFormatted = new Date().toLocaleDateString("es-MX", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
-  })
+  });
+
+  // --- 2. Lógica de la tarjeta de asistencia ---
+  let cardDescription: string;
+  let botonAsistenciaDeshabilitado = true;
+
+  if (loading) {
+    cardDescription = "Cargando estado del día...";
+  } else if (!resumen) {
+    cardDescription = "No se pudo cargar la información.";
+  } else if (!resumen.esDiaLectivo) {
+    // Lógica de "No hay clases" (fines de semana, vacaciones, avisos)
+    cardDescription = `Hoy no hay recorrido: ${resumen.motivoNoLectivo || 'Día no lectivo'}.`;
+  } else if (resumen.asistenciaRegistrada) {
+    cardDescription = "La asistencia del día de hoy ya fue registrada. ¡Gracias!";
+  } else {
+    // Si es día lectivo y no se ha registrado
+    cardDescription = "Listo para iniciar el recorrido. Registra la asistencia.";
+    botonAsistenciaDeshabilitado = false;
+  }
+
+  // --- 3. Renderizado (UI sin cambios) ---
+  if (loading || !resumen) {
+    return (
+      <AsistenteLayout title="Panel del Asistente">
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+        </div>
+      </AsistenteLayout>
+    );
+  }
 
   const quickStats = [
-    {
-      label: "Vehículo Asignado",
-      value: vehiculoAsignado.placa,
-      change: vehiculoAsignado.choferNombre,
-      icon: Car,
-    },
-    {
-      label: "Total de Alumnos",
-      value: totalAlumnos.toString(),
-      change: "En esta ruta",
-      icon: Users,
-    },
-    {
-      label: "Presentes Hoy",
-      value: presentesHoy.toString(),
-      change: "Alumnos a bordo",
-      icon: UserCheck,
-    },
-    {
-      label: "Ausentes Hoy",
-      value: ausentesHoy.toString(),
-      change: "Marcados ausentes",
-      icon: UserX,
-    },
-  ]
+    { label: "Vehículo Asignado", value: resumen.stats.vehiculo.placa, change: resumen.stats.vehiculo.choferNombre, icon: Car },
+    { label: "Total de Alumnos", value: resumen.stats.totalAlumnos.toString(), change: "En esta ruta", icon: Users },
+    { label: "Presentes Hoy", value: resumen.stats.presentesHoy.toString(), change: "Alumnos a bordo", icon: UserCheck },
+    { label: "Ausentes Hoy", value: resumen.stats.ausentesHoy.toString(), change: "Marcados ausentes", icon: UserX },
+  ];
 
   return (
     <AsistenteLayout title="Panel del Asistente">
       {/* Encabezado principal */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Resumen del Día</h1>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-6 w-6" />
-          {avisos.length > 0 && (
-            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
-              {avisos.length}
-            </span>
-          )}
-        </Button>
+
+{/* --- INICIO DE LA CORRECCIÓN --- */}
+        <Link href="/dashboard/asistente/avisos">
+          <Button variant="ghost" size="icon" className="relative">
+            <Bell className="h-6 w-6" />
+            {resumen.avisos.length > 0 && (
+              <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                {resumen.avisos.length}
+              </span>
+            )}
+          </Button>
+        </Link>
+        {/* --- FIN DE LA CORRECCIÓN --- */}
       </div>
 
       {/* Tarjeta del día */}
@@ -99,14 +138,12 @@ export default function AsistenteDashboard() {
         <CardHeader>
           <CardTitle className="capitalize">{todayFormatted}</CardTitle>
           <CardDescription>
-            {isWeekend
-              ? "Hoy es fin de semana, no hay recorrido programado."
-              : "Listo para iniciar el recorrido. Registra la asistencia."}
+            {cardDescription}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <a href="/dashboard/asistente/asistencia">
-            <Button disabled={isWeekend}>
+            <Button disabled={botonAsistenciaDeshabilitado}>
               Registrar Asistencia del Día
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>

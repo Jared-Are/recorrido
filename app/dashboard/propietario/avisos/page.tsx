@@ -1,7 +1,9 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+// Importamos RequestInit para tipar la opción de fetch
+import type { RequestInit } from "next/dist/server/web/spec-extension/request"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,12 +15,24 @@ import {
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown 
+    TrendingDown,
+    Loader2,
+    Pencil,  // <-- 1. Importar icono de Editar
+    Trash2   // <-- 2. Importar icono de Eliminar
 } from "lucide-react"
-import { mockAvisos, type Aviso } from "@/lib/mock-data"
 import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
 
-// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+// --- TIPO ACTUALIZADO (Coincide con aviso.entity.ts) ---
+export type Aviso = {
+  id: string;
+  titulo: string;
+  contenido: string; 
+  destinatario: 'todos' | 'tutores' | 'personal'; 
+  fechaCreacion: string; 
+};
+
+// --- DEFINICIÓN DEL MENÚ (Sin cambios) ---
 const menuItems: MenuItem[] = [
   {
     title: "Gestionar Alumnos",
@@ -87,7 +101,79 @@ const menuItems: MenuItem[] = [
 ];
 
 export default function AvisosPage() {
-  const [avisos, setAvisos] = useState<Aviso[]>(mockAvisos)
+  const [avisos, setAvisos] = useState<Aviso[]>([])
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  // --- Cargar Avisos desde la API (Sin cambios) ---
+  useEffect(() => {
+    const fetchAvisos = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos`);
+        
+        if (!response.ok) {
+          throw new Error("No se pudo obtener la lista de avisos");
+        }
+        
+        const data: Aviso[] = await response.json();
+        setAvisos(data);
+
+      } catch (err: any) {
+        toast({
+          title: "Error al cargar avisos",
+          description: (err as Error).message,
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAvisos();
+  }, [toast]);
+
+
+  // --- 3. Lógica para Eliminar (Adaptada de VehiculosPage) ---
+  const handleEliminarAviso = async (id: string) => {
+    const aviso = avisos.find(a => a.id === id);
+    if (!aviso) return;
+
+    // Confirmación
+    const confirmMessage = `¿Estás seguro de ELIMINAR PERMANENTEMENTE el aviso "${aviso.titulo}"? Esta acción no se puede deshacer.`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const requestOptions: RequestInit = {
+        method: 'DELETE',
+      };
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`, 
+        requestOptions
+      );
+
+      if (!response.ok) {
+        // Tu backend (AvisosService > remove) no tiene control de FK,
+        // pero sí podría fallar por otros motivos.
+        const errData = await response.json().catch(() => null);
+        throw new Error(errData?.message || "No se pudo eliminar el aviso.");
+      }
+      
+      // Actualizar el estado local
+      setAvisos(prev => prev.filter(a => a.id !== id)); 
+
+      toast({
+        title: "Acción completada",
+        description: `Aviso "${aviso.titulo}" eliminado permanentemente.`,
+      });
+
+    } catch (err: any) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+    }
+  }
 
   return (
     <DashboardLayout title="Gestión de Avisos" menuItems={menuItems}>
@@ -101,30 +187,84 @@ export default function AvisosPage() {
             </Link>
         </div>
 
-        <div className="grid gap-4">
-          {avisos.map((aviso) => (
-            <Card key={aviso.id}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="text-lg">{aviso.titulo}</CardTitle>
-                    <CardDescription className="mt-1">
-                      {new Date(aviso.fecha + "T00:00:00").toLocaleDateString("es-MX", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </CardDescription>
+        {/* --- ESTADOS DE CARGA Y VACÍO (Sin cambios) --- */}
+        {loading && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex justify-center items-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <p className="ml-3 text-muted-foreground">Cargando avisos...</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {!loading && avisos.length === 0 && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-10">
+                <p className="text-muted-foreground">No hay avisos para mostrar.</p>
+                <p className="text-sm text-muted-foreground">¡Crea uno nuevo para empezar!</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* --- LISTA DE AVISOS (Renderizado corregido) --- */}
+        {!loading && avisos.length > 0 && (
+          <div className="grid gap-4">
+            {avisos.map((aviso) => (
+              <Card key={aviso.id}>
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    {/* Lado Izquierdo: Título y Fecha */}
+                    <div>
+                      <CardTitle className="text-lg">{aviso.titulo}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {new Date(aviso.fechaCreacion).toLocaleDateString("es-NI", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        })}
+                      </CardDescription>
+                    </div>
+
+                    {/* --- 4. Lado Derecho: Destinatario y Botones de Acción --- */}
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                        Para: {aviso.destinatario?.toUpperCase() || "TODOS"}
+                      </div>
+                      
+                      {/* Botones de Acción */}
+                      <div className="flex gap-1">
+                        <Link href={`/dashboard/propietario/avisos/${aviso.id}`}>
+                          <Button variant="ghost" size="icon" title="Editar">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          title="Eliminar"
+                          onClick={() => handleEliminarAviso(aviso.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">Para: {aviso.destinatarios.join(", ")}</div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-foreground">{aviso.mensaje}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-foreground whitespace-pre-line">
+                    {aviso.contenido}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

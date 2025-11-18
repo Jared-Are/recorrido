@@ -10,12 +10,22 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Send, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, ArrowLeft } from "lucide-react"
-import { mockAvisos, type Aviso } from "@/lib/mock-data"
+import { 
+    Send, 
+    Users, 
+    DollarSign, 
+    Bus, 
+    UserCog, 
+    Bell, 
+    BarChart3, 
+    TrendingDown, 
+    ArrowLeft,
+    Loader2
+} from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
 
-// --- DEFINICIÓN DEL MENÚ PARA QUE EL LAYOUT FUNCIONE ---
+// --- DEFINICIÓN DEL MENÚ (Sin cambios) ---
 const menuItems: MenuItem[] = [
   {
     title: "Gestionar Alumnos",
@@ -83,37 +93,88 @@ const menuItems: MenuItem[] = [
   },
 ];
 
+type DestinatarioTipo = "tutores" | "personal";
+
 export default function NuevoAvisoPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
+  
+  // --- CAMBIO DE ESTADO (mensaje -> contenido) ---
   const [formData, setFormData] = useState({
     titulo: "",
-    mensaje: "",
-    destinatarios: [] as ("tutores" | "personal" | "todos")[],
+    contenido: "", // <--- CAMBIADO
+    destinatarios: [] as DestinatarioTipo[], 
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // --- FUNCIÓN DE ENVÍO (CONECTADA A LA API) ---
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // El DTO no permite un array vacío, pero el formulario sí.
+    // Dejamos que el DTO (backend) use su valor 'default' si no se marca nada.
+    
     setLoading(true)
 
-    const newAviso: Aviso = {
-      id: String(Date.now()),
-      ...formData,
-      fecha: new Date().toISOString().split("T")[0],
+    // --- LÓGICA DE ADAPTACIÓN ---
+    // El backend espera UN solo string ('tutores', 'personal', o 'todos')
+    // El frontend usa un array (['tutores', 'personal'])
+    // Necesitamos "traducir" del frontend al backend.
+    
+    let destinatario: 'todos' | 'tutores' | 'personal' | undefined = undefined;
+    const hasTutores = formData.destinatarios.includes('tutores');
+    const hasPersonal = formData.destinatarios.includes('personal');
+
+    if (hasTutores && hasPersonal) {
+        destinatario = 'todos';
+    } else if (hasTutores) {
+        destinatario = 'tutores';
+    } else if (hasPersonal) {
+        destinatario = 'personal';
+    }
+    // Si es 'undefined', el backend DTO es 'opcional' y usará el 'default' de la entidad.
+
+    // --- PAYLOAD CORREGIDO ---
+    // Esto coincide EXACTAMENTE con tu CreateAvisoDto
+    const payload = {
+      titulo: formData.titulo,
+      contenido: formData.contenido, // <--- CAMBIADO
+      destinatario: destinatario,      // <--- CAMBIADO
+      // No enviamos 'fecha', el backend lo maneja
     }
 
-    mockAvisos.unshift(newAviso)
-    toast({
-      title: "Aviso enviado",
-      description: `El aviso ha sido enviado a ${formData.destinatarios.join(", ")}.`,
-    })
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-    setLoading(false)
-    router.push("/dashboard/propietario/avisos")
+      if (!response.ok) {
+        // Capturamos el error de validación de NestJS
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message.toString() || "No se pudo enviar el aviso");
+      }
+
+      toast({
+        title: "Aviso enviado",
+        description: `El aviso ha sido enviado.`,
+      })
+
+      router.push("/dashboard/propietario/avisos")
+
+    } catch (err: any) {
+      toast({
+        title: "Error al enviar",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const toggleDestinatario = (tipo: "tutores" | "personal" | "todos") => {
+  const toggleDestinatario = (tipo: DestinatarioTipo) => {
     setFormData({
       ...formData,
       destinatarios: formData.destinatarios.includes(tipo)
@@ -148,20 +209,26 @@ export default function NuevoAvisoPage() {
                     required
                   />
                 </div>
+                
+                {/* --- TEXTAREA ACTUALIZADO --- */}
                 <div className="space-y-2">
-                  <Label htmlFor="mensaje">Mensaje *</Label>
+                  <Label htmlFor="contenido">Mensaje *</Label> {/* El label puede decir 'Mensaje' */}
                   <Textarea
-                    id="mensaje"
+                    id="contenido" // <--- CAMBIADO
                     placeholder="Escribe el mensaje del aviso..."
-                    value={formData.mensaje}
-                    onChange={(e) => setFormData({ ...formData, mensaje: e.target.value })}
+                    value={formData.contenido} // <--- CAMBIADO
+                    onChange={(e) => setFormData({ ...formData, contenido: e.target.value })} // <--- CAMBIADO
                     rows={4}
                     required
                   />
                 </div>
+                
                 <div className="space-y-2">
-                  <Label>Destinatarios *</Label>
-                  <div className="flex flex-col gap-2">
+                  <Label>Destinatarios</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Si no seleccionas ninguno, se enviará a 'todos' por defecto.
+                  </p>
+                  <div className="flex flex-col gap-2 pt-2">
                     <div className="flex items-center space-x-2">
                       <Checkbox
                         id="tutores"
@@ -184,17 +251,22 @@ export default function NuevoAvisoPage() {
                     </div>
                   </div>
                 </div>
-              <div className="flex gap-3 pt-4">
-                <Button type="submit" disabled={loading || formData.destinatarios.length === 0}>
-                  <Send className="h-4 w-4 mr-2" />
-                  {loading ? "Enviando..." : "Enviar Aviso"}
-                </Button>
-                 <Link href="/dashboard/propietario/avisos">
-                    <Button type="button" variant="outline">
-                        Cancelar
-                    </Button>
-                 </Link>
-              </div>
+                <div className="flex gap-3 pt-4">
+                  {/* El botón ahora puede estar activo aunque no se marquen destinatarios */}
+                  <Button type="submit" disabled={loading}>
+                    {loading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                        <Send className="h-4 w-4 mr-2" />
+                    )}
+                    {loading ? "Enviando..." : "Enviar Aviso"}
+                  </Button>
+                   <Link href="/dashboard/propietario/avisos">
+                      <Button type="button" variant="outline">
+                          Cancelar
+                      </Button>
+                   </Link>
+                </div>
             </form>
           </CardContent>
         </Card>
