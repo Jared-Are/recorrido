@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 
-// --- MENÚ (Igual) ---
+// --- MENÚ ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -52,7 +52,7 @@ export default function PropietarioDashboard() {
 
   // Datos Formularios
   const [motivoEmergencia, setMotivoEmergencia] = useState("")
-  const [fechaSuspension, setFechaSuspension] = useState("") // <-- NUEVO: Para elegir fecha
+  const [fechaSuspension, setFechaSuspension] = useState("") 
 
   const [configEscolar, setConfigEscolar] = useState({
     inicioAnioEscolar: "",
@@ -114,7 +114,7 @@ export default function PropietarioDashboard() {
     }
   }
 
-  // Acción: Suspender Clases (Con fecha variable)
+  // Acción: Suspender Clases
   const handleEmergencyStop = async () => {
     if (!motivoEmergencia.trim() || !fechaSuspension) return
     setLoadingConfig(true)
@@ -123,7 +123,7 @@ export default function PropietarioDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-            fecha: fechaSuspension, // <-- Enviamos la fecha elegida
+            fecha: fechaSuspension, 
             motivo: motivoEmergencia 
         })
       })
@@ -155,108 +155,125 @@ export default function PropietarioDashboard() {
     <DashboardLayout title="Panel del Propietario" menuItems={menuItems}>
       <div className="space-y-8">
         
-        {/* --- BARRA SUPERIOR --- */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-900 p-4 rounded-lg border shadow-sm">
-            <div>
-                <h2 className="text-lg font-semibold">Estado del Sistema</h2>
-                <p className="text-sm text-muted-foreground">Gestión del ciclo escolar y emergencias.</p>
-            </div>
-            <div className="flex gap-3 w-full sm:w-auto">
-                {/* Botón Configurar */}
-                <Dialog open={isConfigOpen} onOpenChange={(open) => { setIsConfigOpen(open); if (open) fetchConfig(); }}>
-                    <DialogTrigger asChild>
-                        <Button variant="outline" className="flex-1 sm:flex-none gap-2">
-                            <Settings className="h-4 w-4" />
-                            Configurar Ciclo
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[500px]">
-                         <DialogHeader>
-                            <DialogTitle>Configuración del Ciclo</DialogTitle>
-                        </DialogHeader>
-                        <div className="grid gap-6 py-4">
-                            {/* ... (Inputs de fechas igual que antes) ... */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Inicio de Clases</Label>
-                                    <Input type="date" value={configEscolar.inicioAnioEscolar} onChange={(e) => setConfigEscolar({...configEscolar, inicioAnioEscolar: e.target.value})} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Fin de Clases (Estimado)</Label>
-                                    <Input type="date" value={configEscolar.finAnioEscolar} onChange={(e) => setConfigEscolar({...configEscolar, finAnioEscolar: e.target.value})} />
-                                </div>
-                            </div>
-                            <div className="space-y-2 border-t pt-4">
-                                <h4 className="font-medium text-sm">Vacaciones de Medio Año</h4>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Inicio Vacaciones</Label>
-                                    <Input type="date" value={configEscolar.inicioVacacionesMedioAnio} onChange={(e) => setConfigEscolar({...configEscolar, inicioVacacionesMedioAnio: e.target.value})} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Fin Vacaciones</Label>
-                                    <Input type="date" value={configEscolar.finVacacionesMedioAnio} onChange={(e) => setConfigEscolar({...configEscolar, finVacacionesMedioAnio: e.target.value})} />
-                                </div>
-                            </div>
+        {/* --- BOTONES GRANDES DE ACCIÓN (ESTILO TARJETA) --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Botón: Suspender (Rojo) */}
+            <Dialog open={isEmergencyOpen} onOpenChange={setIsEmergencyOpen}>
+                <DialogTrigger asChild>
+                    <Card 
+                        onClick={openEmergencyModal}
+                        className="border-l-8 border-l-red-500 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 group"
+                    >
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-bold text-red-600 uppercase tracking-wide">
+                                Zona de Emergencia
+                            </CardTitle>
+                            <AlertTriangle className="h-6 w-6 text-red-600 group-hover:scale-110 transition-transform" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-2">Suspender Hoy</div>
+                            <p className="text-sm text-gray-500 mt-1">
+                                Registrar día no lectivo por fuerza mayor.
+                            </p>
+                        </CardContent>
+                    </Card>
+                </DialogTrigger>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="text-red-600">Suspender Operaciones</DialogTitle>
+                        <DialogDescription>
+                            Registra un día en el que no habrá clases (Feriado, Emergencia, etc).
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="fecha">Fecha de Suspensión</Label>
+                            <Input 
+                                id="fecha" 
+                                type="date"
+                                value={fechaSuspension}
+                                onChange={(e) => setFechaSuspension(e.target.value)}
+                            />
                         </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsConfigOpen(false)}>Cancelar</Button>
-                            <Button onClick={handleSaveConfig} disabled={loadingConfig}>
-                                {loadingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar Cambios"}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                        <div className="space-y-2">
+                            <Label htmlFor="motivo">Motivo</Label>
+                            <Input 
+                                id="motivo" 
+                                placeholder="Ej: Lluvia intensa, Paro nacional..." 
+                                value={motivoEmergencia}
+                                onChange={(e) => setMotivoEmergencia(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsEmergencyOpen(false)}>Cancelar</Button>
+                        <Button variant="destructive" onClick={handleEmergencyStop} disabled={loadingConfig || !motivoEmergencia || !fechaSuspension}>
+                            {loadingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar Suspensión"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
-                {/* Botón Suspender (Ahora con fecha) */}
-                <Dialog open={isEmergencyOpen} onOpenChange={setIsEmergencyOpen}>
-                    <DialogTrigger asChild>
-                        <Button variant="destructive" onClick={openEmergencyModal} className="flex-1 sm:flex-none gap-2">
-                            <AlertTriangle className="h-4 w-4" />
-                            Registrar Día No Lectivo
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle className="text-red-600">Suspender Operaciones</DialogTitle>
-                            <DialogDescription>
-                                Registra un día en el que no habrá clases (Feriado, Emergencia, etc).
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="py-4 space-y-4">
+            {/* Botón: Configurar (Azul) */}
+            <Dialog open={isConfigOpen} onOpenChange={(open) => { setIsConfigOpen(open); if (open) fetchConfig(); }}>
+                <DialogTrigger asChild>
+                    <Card className="border-l-8 border-l-blue-500 cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 group">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-bold text-blue-600 uppercase tracking-wide">
+                                Administración
+                            </CardTitle>
+                            <Settings className="h-6 w-6 text-blue-600 group-hover:rotate-45 transition-transform" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-2">Ciclo Escolar</div>
+                            <p className="text-sm text-gray-500 mt-1">
+                                Definir fechas de inicio, fin y vacaciones.
+                            </p>
+                        </CardContent>
+                    </Card>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                     <DialogHeader>
+                        <DialogTitle>Configuración del Ciclo</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-6 py-4">
+                        <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="fecha">Fecha de Suspensión</Label>
-                                <Input 
-                                    id="fecha" 
-                                    type="date"
-                                    value={fechaSuspension}
-                                    onChange={(e) => setFechaSuspension(e.target.value)}
-                                />
+                                <Label>Inicio de Clases</Label>
+                                <Input type="date" value={configEscolar.inicioAnioEscolar} onChange={(e) => setConfigEscolar({...configEscolar, inicioAnioEscolar: e.target.value})} />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="motivo">Motivo</Label>
-                                <Input 
-                                    id="motivo" 
-                                    placeholder="Ej: Lluvia intensa, Paro nacional..." 
-                                    value={motivoEmergencia}
-                                    onChange={(e) => setMotivoEmergencia(e.target.value)}
-                                />
+                                <Label>Fin de Clases (Estimado)</Label>
+                                <Input type="date" value={configEscolar.finAnioEscolar} onChange={(e) => setConfigEscolar({...configEscolar, finAnioEscolar: e.target.value})} />
                             </div>
                         </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsEmergencyOpen(false)}>Cancelar</Button>
-                            <Button variant="destructive" onClick={handleEmergencyStop} disabled={loadingConfig || !motivoEmergencia || !fechaSuspension}>
-                                {loadingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirmar Suspensión"}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            </div>
+                        <div className="space-y-2 border-t pt-4">
+                            <h4 className="font-medium text-sm">Vacaciones de Medio Año</h4>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Inicio Vacaciones</Label>
+                                <Input type="date" value={configEscolar.inicioVacacionesMedioAnio} onChange={(e) => setConfigEscolar({...configEscolar, inicioVacacionesMedioAnio: e.target.value})} />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Fin Vacaciones</Label>
+                                <Input type="date" value={configEscolar.finVacacionesMedioAnio} onChange={(e) => setConfigEscolar({...configEscolar, finVacacionesMedioAnio: e.target.value})} />
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsConfigOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleSaveConfig} disabled={loadingConfig}>
+                            {loadingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar Cambios"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
 
-        {/* --- RESUMEN RÁPIDO (DATOS REALES) --- */}
-        <h3 className="text-lg font-semibold text-muted-foreground">Resumen Operativo</h3>
+        {/* --- RESUMEN OPERATIVO (DATOS REALES) --- */}
+        <h3 className="text-lg font-semibold text-muted-foreground pt-4">Resumen Operativo</h3>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             
             <Card>
@@ -302,7 +319,6 @@ export default function PropietarioDashboard() {
                     <p className="text-xs text-muted-foreground mt-1">En flota activa</p>
                 </CardContent>
             </Card>
-
         </div>
 
       </div>
