@@ -278,7 +278,7 @@ export default function VehiculosPage() {
                       {/* --- ACCIONES CORREGIDAS --- */}
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Link href={`/dashboard/propietario/vehiculos/editar/${v.id}`}>
+                          <Link href={`/dashboard/propietario/vehiculos/${v.id}`}>
                             <Button variant="ghost" size="icon" title="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>

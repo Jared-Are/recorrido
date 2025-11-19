@@ -1,190 +1,147 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { TutorLayout } from "@/components/tutor-layout"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Bell } from "lucide-react"
-import {
-  mockPagos,
-  mockAsistencias,
-  mockAlumnos,
-  mockAvisos,
-} from "@/lib/mock-data"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { CheckCircle2, Clock, AlertCircle, ArrowRight, Bell, DollarSign, Loader2, Bus } from "lucide-react"
+import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
 
 export default function TutorDashboard() {
-  // --- DATOS DEL TUTOR ---
-  const tutorData = {
-    hijos: mockAlumnos.filter((a) => a.tutor === "María Pérez"),
-  }
+  const { toast } = useToast()
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<any>(null)
 
-  const hijosIds = tutorData.hijos.map((h) => h.id)
-  const pagos = mockPagos.filter((p) => hijosIds.includes(p.alumnoId))
-  const asistencias = mockAsistencias.filter((a) => hijosIds.includes(a.alumnoId))
-  const avisos = mockAvisos.filter((a) => a.destinatarios.includes("tutores"))
-
-  // --- LÓGICA DE PAGOS ---
-  const meses = [
-    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-  ]
-
-  let ultimoMesPagado = "N/A"
-  let totalPagadoUltimoMes = 0
-  let mesPendiente = "Al día"
-  let totalPendienteMesSiguiente = 0
-
-  const pagosPagados = pagos.filter((p) => p.estado === "pagado")
-  const pagosPendientes = pagos.filter((p) => p.estado === "pendiente")
-
-  if (pagosPagados.length > 0) {
-    let ultimoPago = pagosPagados[0]
-    let ultimoIndiceMes = -1
-    pagosPagados.forEach((pago) => {
-      const [nombreMes] = pago.mes.split(" ")
-      const indiceActual = meses.indexOf(nombreMes)
-      if (indiceActual > ultimoIndiceMes) {
-        ultimoIndiceMes = indiceActual
-        ultimoPago = pago
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tutor/resumen`)
+        if (!res.ok) throw new Error("Error al cargar datos")
+        const json = await res.json()
+        setData(json)
+      } catch (error) {
+        toast({ title: "Error", description: "No se pudo cargar el resumen.", variant: "destructive" })
+      } finally {
+        setLoading(false)
       }
-    })
-    ultimoMesPagado = ultimoPago.mes
-    totalPagadoUltimoMes = ultimoPago.monto
+    }
+    fetchData()
+  }, [toast])
+
+  if (loading) {
+    return (
+        <TutorLayout title="Inicio">
+            <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        </TutorLayout>
+    )
   }
+  if (!data) return null
 
-  if (pagosPendientes.length > 0) {
-    let primerPagoPendiente = pagosPendientes[0]
-    let primerIndiceMes = 12
-    pagosPendientes.forEach((pago) => {
-      const [nombreMes] = pago.mes.split(" ")
-      const indiceActual = meses.indexOf(nombreMes)
-      if (indiceActual < primerIndiceMes) {
-        primerIndiceMes = indiceActual
-        primerPagoPendiente = pago
-      }
-    })
-    mesPendiente = primerPagoPendiente.mes
-    totalPendienteMesSiguiente = primerPagoPendiente.monto
-  }
-
-  // --- LÓGICA DE ASISTENCIAS ---
-  const asistenciasTotales = asistencias.length
-  const presenciasTotales = asistencias.filter((a) => a.presente).length
-  const asistenciasPorcentaje =
-    asistenciasTotales > 0
-      ? (presenciasTotales / asistenciasTotales) * 100
-      : 0
-
-  // --- RENDERIZADO ---
   return (
-    <TutorLayout title="Panel del Tutor">
-      <div className="space-y-6 pb-20"> {/* padding para barra inferior */}
-        {/* Encabezado */}
+    <TutorLayout title="Inicio">
+      <div className="space-y-6 pb-20">
+        
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Resumen Familiar
-          </h1>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-6 w-6" />
-              {avisos.length > 0 && (
-                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
-                  {avisos.length}
-                </span>
-              )}
-            </Button>
-          </div>
+            <h1 className="text-2xl font-bold tracking-tight">Resumen Familiar</h1>
+            <Link href="/dashboard/tutor/avisos">
+                <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="h-6 w-6" />
+                    {data.avisos && data.avisos.length > 0 && (
+                         <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">{data.avisos.length}</span>
+                    )}
+                </Button>
+            </Link>
         </div>
 
-        {/* Tarjeta de Hijos */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Mis Hijos</CardTitle>
-            <CardDescription>
-              Resumen y estado de tus hijos en el servicio.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {tutorData.hijos.map((hijo) => (
-              <div
-                key={hijo.id}
-                className="flex items-center justify-between p-3 border rounded-lg dark:border-slate-700"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <span className="text-lg font-bold text-primary">
-                      {hijo.nombre.charAt(0)}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-semibold">{hijo.nombre}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {hijo.grado}
+        {data.hijos.map((hijo: any) => (
+            <Card key={hijo.id} className="border-l-4 border-l-blue-500 shadow-sm">
+                <CardHeader className="pb-2">
+                    <CardDescription>Estado de hoy</CardDescription>
+                    <CardTitle className="text-2xl">{hijo.nombre}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-center gap-4 mt-2">
+                        
+                        {/* --- FOTO DE LA UNIDAD (CORREGIDO) --- */}
+                        {/* Eliminado 'hidden'. Aumentado tamaño a w-20/h-20 en móvil y w-24/h-24 en PC */}
+                        <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-md overflow-hidden border bg-gray-50 shrink-0 relative">
+                            {hijo.vehiculoFotoUrl ? (
+                                <img src={hijo.vehiculoFotoUrl} alt="Bus" className="h-full w-full object-cover" />
+                            ) : (
+                                <div className="h-full w-full flex items-center justify-center text-muted-foreground">
+                                    <Bus className="h-8 w-8 opacity-20" />
+                                </div>
+                            )}
+                        </div>
+                        {/* ------------------------------------- */}
+
+                        <div className="flex items-center gap-3 sm:gap-4 flex-1">
+                            {hijo.estadoHoy === 'presente' && (
+                                <>
+                                    <div className="bg-green-100 p-2 sm:p-3 rounded-full shrink-0">
+                                        <CheckCircle2 className="h-6 w-6 sm:h-8 sm:w-8 text-green-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-base sm:text-lg text-green-700">A bordo</p>
+                                        <p className="text-xs sm:text-sm text-muted-foreground">
+                                            Registrado: {hijo.horaRecogida ? new Date(hijo.horaRecogida).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+                            {hijo.estadoHoy === 'ausente' && (
+                                <>
+                                    <div className="bg-red-100 p-2 sm:p-3 rounded-full shrink-0">
+                                        <AlertCircle className="h-6 w-6 sm:h-8 sm:w-8 text-red-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-base sm:text-lg text-red-700">Ausente</p>
+                                        <p className="text-xs sm:text-sm text-muted-foreground">No asiste hoy.</p>
+                                    </div>
+                                </>
+                            )}
+                            {hijo.estadoHoy === 'pendiente' && (
+                                <>
+                                    <div className="bg-yellow-100 p-2 sm:p-3 rounded-full shrink-0">
+                                        <Clock className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-base sm:text-lg text-yellow-700">Esperando</p>
+                                        <p className="text-xs sm:text-sm text-muted-foreground">Sin registro aún.</p>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
-                  </div>
-                </div>
-                <Badge variant={hijo.activo ? "default" : "secondary"}>
-                  {hijo.activo ? "Activo" : "Inactivo"}
-                </Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+                </CardContent>
+            </Card>
+        ))}
 
-        {/* Resumen Financiero y Asistencias */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs">
-                Último mes pagado
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600 dark:text-green-500">
-                ${totalPagadoUltimoMes.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {ultimoMesPagado}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs">
-                Mes pendiente
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-600 dark:text-orange-500">
-                ${totalPendienteMesSiguiente.toLocaleString()}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {mesPendiente}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="text-xs">
-                Asistencia General
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {asistenciasPorcentaje.toFixed(0)}%
-              </div>
-              <Progress value={asistenciasPorcentaje} className="mt-2" />
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+             <Card className="md:col-span-1">
+                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                    <CardTitle className="text-sm font-medium">Pagos</CardTitle>
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                    <div className="flex justify-between items-center mt-2">
+                        <div>
+                            <p className="text-2xl font-bold">C$ {data.pagos.montoPendiente}</p>
+                            <p className="text-xs text-muted-foreground">Saldo pendiente</p>
+                        </div>
+                        <Badge variant="outline">Al día</Badge>
+                    </div>
+                    <div className="mt-4">
+                        <Link href="/dashboard/tutor/pagos">
+                            <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700">
+                                Ver Historial <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                        </Link>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
       </div>
     </TutorLayout>

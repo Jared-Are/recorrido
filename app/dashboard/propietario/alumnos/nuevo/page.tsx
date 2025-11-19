@@ -233,10 +233,21 @@ export default function NuevoAlumnoPage() {
 
       const responses = await Promise.all(promesasDeCreacion);
 
-      const algunaFallo = responses.some((res) => !res.ok);
-      if (algunaFallo) {
-        throw new Error("Error al registrar a uno o más alumnos. Revisa que los datos no estén duplicados.");
-      }
+     // CÓDIGO NUEVO (El que te dice la verdad)
+const respuestaFallida = responses.find((res) => !res.ok);
+
+if (respuestaFallida) {
+  // 1. Leemos el mensaje real que nos manda el Backend (NestJS)
+  const datosError = await respuestaFallida.json();
+  
+  // 2. Si el mensaje es un array (errores de validación DTO), los unimos
+  const mensajeBackend = Array.isArray(datosError.message) 
+    ? datosError.message.join(', ') 
+    : datosError.message;
+
+  // 3. Lanzamos el error real para que el Toast lo muestre
+  throw new Error(mensajeBackend || "Error desconocido al registrar el alumno.");
+}
 
       toast({
         title: "Registro Exitoso",

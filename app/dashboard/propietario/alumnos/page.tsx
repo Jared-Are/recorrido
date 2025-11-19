@@ -488,7 +488,7 @@ export default function AlumnosPage() {
                       <TableCell className="whitespace-nowrap">{alumno.contacto || "N/A"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Link href={`/dashboard/propietario/alumnos/editar/${alumno.id}`}>
+                          <Link href={`/dashboard/propietario/alumnos/${alumno.id}`}>
                             <Button variant="ghost" size="icon" title="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>

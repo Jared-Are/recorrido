@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from '@supabase/supabase-js'; // <-- 1. Importar Cliente Supabase
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// Select ya no es necesario aquí
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
     ArrowLeft, 
     Save, 
@@ -19,10 +18,19 @@ import {
     Bell, 
     BarChart3, 
     TrendingDown,
-    Loader2
+    Loader2,
+    Upload, // <-- Iconos nuevos para la foto
+    Image as ImageIcon,
+    X
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+
+// --- 2. Inicializar Cliente Supabase ---
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 // --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
@@ -39,7 +47,13 @@ const menuItems: MenuItem[] = [
 export default function NuevoVehiculoPage() {
   const router = useRouter();
   const { toast } = useToast();
+  
   const [loading, setLoading] = useState(false);
+  
+  // --- 3. Estados para la imagen ---
+  const [uploading, setUploading] = useState(false);
+  const [fotoUrl, setFotoUrl] = useState("");
+
   const [formData, setFormData] = useState({
     nombre: "",
     placa: "",
@@ -47,12 +61,49 @@ export default function NuevoVehiculoPage() {
     modelo: "",
     anio: "",
     capacidad: "",
-    // 'recorridoAsignado' eliminado
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // --- 4. Lógica de Subida de Imagen ---
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!e.target.files || e.target.files.length === 0) return;
+      
+      setUploading(true);
+      const file = e.target.files[0];
+      
+      // Generar nombre único para evitar colisiones
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // Subir al bucket 'vehiculos'
+      const { error: uploadError } = await supabase.storage
+        .from('vehiculos') 
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Obtener la URL pública para guardarla en la BD
+      const { data } = supabase.storage.from('vehiculos').getPublicUrl(filePath);
+      
+      setFotoUrl(data.publicUrl);
+      toast({ title: "Imagen cargada", description: "La foto se subió correctamente." });
+
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Error al subir imagen", description: error.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setFotoUrl("");
   };
 
   // --- Enviar Vehículo a la API ---
@@ -64,6 +115,7 @@ export default function NuevoVehiculoPage() {
       ...formData,
       anio: parseInt(formData.anio) || undefined,
       capacidad: parseInt(formData.capacidad) || undefined,
+      fotoUrl: fotoUrl, // <-- 5. Incluir la URL de la foto
     };
 
     try {
@@ -103,8 +155,59 @@ export default function NuevoVehiculoPage() {
             <CardDescription>Completa los detalles de la unidad.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-6">
               
+              {/* --- 6. UI DE SUBIDA DE FOTO --- */}
+              <div className="space-y-2">
+                  <Label>Fotografía de la Unidad</Label>
+                  <div className="flex items-start gap-6 border p-4 rounded-lg bg-gray-50 dark:bg-gray-900/20">
+                      {/* Previsualización */}
+                      <div className="relative h-32 w-48 bg-white dark:bg-gray-800 rounded-md border flex items-center justify-center overflow-hidden shadow-sm shrink-0">
+                          {uploading ? (
+                              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                          ) : fotoUrl ? (
+                              <>
+                                <img src={fotoUrl} alt="Vista previa" className="h-full w-full object-cover" />
+                                <button 
+                                    type="button"
+                                    onClick={handleRemoveImage}
+                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                                    title="Eliminar foto"
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+                              </>
+                          ) : (
+                              <div className="text-center p-2">
+                                  <ImageIcon className="h-8 w-8 text-gray-300 mx-auto mb-1" />
+                                  <span className="text-xs text-gray-400">Sin imagen</span>
+                              </div>
+                          )}
+                      </div>
+                      
+                      {/* Botón de Subida */}
+                      <div className="flex-1 space-y-2">
+                          <p className="text-sm text-muted-foreground">
+                              Sube una foto clara del vehículo. Esta imagen será visible para los tutores y asistentes.
+                          </p>
+                          <Label htmlFor="foto-upload" className="cursor-pointer inline-flex">
+                              <div className="flex items-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                                  <Upload className="h-4 w-4" />
+                                  {fotoUrl ? "Cambiar Foto" : "Subir Foto"}
+                              </div>
+                              <Input 
+                                  id="foto-upload" 
+                                  type="file" 
+                                  accept="image/*" 
+                                  className="hidden" 
+                                  onChange={handleImageUpload}
+                                  disabled={uploading || loading}
+                              />
+                          </Label>
+                      </div>
+                  </div>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre o Apodo *</Label>
@@ -178,21 +281,17 @@ export default function NuevoVehiculoPage() {
                 </div>
               </div>
 
-              {/* --- CAMPO ELIMINADO ---
-              <div className="space-y-2">
-                  <Label htmlFor="recorridoAsignado">Recorrido Asignado</Label>
-                  <Select ... >
-                  </Select>
-                </div>
-              */}
-
               <div className="flex gap-3 pt-4">
-                <Button type="submit" disabled={loading}>
-                  <Save className="h-4 w-4 mr-2" />
+                <Button type="submit" disabled={loading || uploading}>
+                  {loading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                  )}
                   {loading ? "Guardando..." : "Guardar Vehículo"}
                 </Button>
                 <Link href="/dashboard/propietario/vehiculos">
-                  <Button type="button" variant="outline">Cancelar</Button>
+                    <Button type="button" variant="outline">Cancelar</Button>
                 </Link>
               </div>
             </form>
