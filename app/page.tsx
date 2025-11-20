@@ -1,11 +1,11 @@
 "use client";
 
-import type React from "react";
-
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -13,50 +13,98 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bus, AlertCircle } from "lucide-react";
-import { validateCredentials, getDashboardPath } from "@/lib/auth";
+import { Bus, AlertCircle, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
-  const [remember, setRemember] = useState(false);
+  const { toast } = useToast();
+  
+  const [identifier, setIdentifier] = useState(""); // "Usuario" (puede ser username, tel o email)
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-
-useEffect(() => {
+  // Recuperar usuario guardado si marcó "Recordarme"
+  useEffect(() => {
     const savedUser = localStorage.getItem("rememberedUser");
     if (savedUser) {
-      setUsername(savedUser);
+      setIdentifier(savedUser);
       setRemember(true);
     }
   }, []);
-
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      // PASO 1: Averiguar el EMAIL real detrás del Usuario/Teléfono
+      // Llamamos a nuestro propio backend para esto
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      
+      const lookupRes = await fetch(`${apiUrl}/users/lookup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: identifier }),
+      });
 
-    const user = validateCredentials(username, password);
+      if (!lookupRes.ok) {
+        // Si el backend no encuentra el usuario
+        throw new Error("Usuario no encontrado en el sistema.");
+      }
 
-    if (user) {
-      // Store user in localStorage
-      localStorage.setItem("currentUser", JSON.stringify(user));
+      const { email: realEmail } = await lookupRes.json();
 
-      // Redirect to appropriate dashboard
-      const dashboardPath = getDashboardPath(user.role);
-      router.push(dashboardPath);
-    } else {
-      setError(
-        "Credenciales incorrectas. Por favor, verifica tu correo y contraseña."
-      );
+      // PASO 2: Login en Supabase usando el EMAIL recuperado
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: realEmail,
+        password: password,
+      });
+
+      if (error) throw error;
+
+      // PASO 3: Guardar preferencia "Recordarme"
+      if (remember) {
+        localStorage.setItem("rememberedUser", identifier); // Guardamos lo que escribió el usuario
+      } else {
+        localStorage.removeItem("rememberedUser");
+      }
+
+      toast({ title: "Bienvenido", description: "Accediendo al sistema..." });
+
+      // PASO 4: Redirección según ROL
+      const rol = data.user?.user_metadata?.rol;
+
+      switch (rol) {
+        case 'propietario':
+          router.push("/dashboard/propietario");
+          break;
+        case 'tutor':
+          router.push("/dashboard/tutor"); 
+          break;
+        case 'asistente':
+          router.push("/dashboard/asistente");
+          break;
+        default:
+          // Si no tiene rol o es desconocido, lo mandamos al login o home
+          router.push("/login"); 
+      }
+
+    } catch (err: any) {
+      console.error(err);
+      // Mensaje amigable para el usuario
+      if (err.message === "Usuario no encontrado en el sistema.") {
+         setError("El usuario ingresado no existe.");
+      } else if (err.message.includes("Invalid login credentials")) {
+         setError("Contraseña incorrecta.");
+      } else {
+         setError("Error al iniciar sesión. Verifica tus datos.");
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -78,25 +126,17 @@ useEffect(() => {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Usuario</Label>
+              <Label htmlFor="identifier">Usuario</Label>
               <Input
-                id="username"
-                placeholder="Ej: Juan.perez01"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="identifier"
+                type="text"
+                placeholder="Ej: juan.perez o 5058888..."
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
                 disabled={loading}
               />
             </div>
-
-            <label className="flex items-center gap-2 mt-2">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              Recordarme
-            </label>
 
             <div className="space-y-2">
               <Label htmlFor="password">Contraseña</Label>
@@ -111,6 +151,19 @@ useEffect(() => {
               />
             </div>
 
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="checkbox"
+                id="remember"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <Label htmlFor="remember" className="cursor-pointer font-normal">
+                Recordarme
+              </Label>
+            </div>
+
             {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -119,19 +172,18 @@ useEffect(() => {
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Iniciando...
+                </>
+              ) : (
+                "Iniciar Sesión"
+              )}
             </Button>
           </form>
-
-          <div className="mt-6 p-4 bg-muted rounded-lg">
-            <p className="text-sm font-medium text-muted-foreground mb-2">
-              Usuarios de prueba:
-            </p>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p>Propietario: propietario@recorrido.com / 1234</p>
-              <p>Asistente: asistente@recorrido.com / 1234</p>
-              <p>Tutor: tutor@recorrido.com / 1234</p>
-            </div>
+          
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+             ¿Problemas para entrar? Contacta al administrador.
           </div>
         </CardContent>
       </Card>

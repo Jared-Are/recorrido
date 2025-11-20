@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react"
 import { AsistenteLayout } from "@/components/asistente-layout"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Loader2, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase" // <--- IMPORTANTE
 
 // (Este tipo 'Aviso' debe coincidir con el de tu Propietario)
 export type Aviso = {
@@ -26,8 +27,17 @@ export default function AvisosAsistentePage() {
     const fetchAvisos = async () => {
       setLoading(true);
       try {
-        // 1. Apuntamos al nuevo endpoint
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/para-asistente`);
+        // A. OBTENER TOKEN
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        // B. ENVIAR TOKEN EN HEADERS
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/para-asistente`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
         
         if (!response.ok) {
           throw new Error("No se pudo obtener la lista de avisos");

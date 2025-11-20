@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import { useState, useEffect } from "react"
 import { AsistenteLayout } from "@/components/asistente-layout"
@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { CheckCircle, XCircle, ChevronsUpDown, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase" // <--- IMPORTANTE
 
 // --- Tipos para el backend ---
 type RegistroHistorial = {
@@ -60,7 +61,18 @@ export default function HistorialPage() {
       setLoading(true);
       setAsistenciasPorDia({}); // Limpia los datos anteriores
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/historial?mes=${selectedMonth}`);
+        // A. OBTENER TOKEN
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        // B. ENVIAR TOKEN EN HEADERS
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/historial?mes=${selectedMonth}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
         if (!response.ok) throw new Error("No se pudo cargar el historial");
 
         const data: DiaHistorial[] = await response.json();

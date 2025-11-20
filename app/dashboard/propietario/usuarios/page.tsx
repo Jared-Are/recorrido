@@ -145,7 +145,7 @@ export default function UsuariosPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
       const [resUsers, resSolicitudes] = await Promise.all([
         fetch(`${apiUrl}/users`),
         fetch(`${apiUrl}/solicitudes`),
@@ -173,7 +173,7 @@ export default function UsuariosPage() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
       const res = await fetch(`${apiUrl}/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -211,7 +211,7 @@ export default function UsuariosPage() {
   // 3. Enviar Invitación por WhatsApp
   const handleEnviarInvitacion = async (id: string, nombre: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
       const res = await fetch(`${apiUrl}/users/${id}/invitacion`, {
         method: "POST",
       });
@@ -240,7 +240,7 @@ export default function UsuariosPage() {
   // 4. Aprobar Solicitud
   const handleAprobarSolicitud = async (id: string) => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
       const res = await fetch(`${apiUrl}/solicitudes/${id}/aprobar`, {
         method: "PATCH",
       });
@@ -261,7 +261,7 @@ export default function UsuariosPage() {
   const handleDelete = async (id: string, type: "users" | "solicitudes") => {
     if (!confirm("¿Estás seguro?")) return;
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
       await fetch(`${apiUrl}/${type}/${id}`, { method: "DELETE" });
       toast({ title: "Eliminado correctamente" });
       fetchData();
@@ -364,8 +364,8 @@ export default function UsuariosPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nombre</TableHead>
-                      <TableHead>Usuario (Login)</TableHead>{" "}
-                      {/* NUEVA COLUMNA */}
+                      <TableHead>Usuario (Login)</TableHead>
+                      {/* El espacio {" "} fue eliminado de aquí */}
                       <TableHead>Rol</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
@@ -490,7 +490,9 @@ export default function UsuariosPage() {
                                 size="sm"
                                 variant="outline"
                                 className="text-red-600 hover:bg-red-50"
-                                onClick={() => handleDelete(s.id, "solicitudes")}
+                                onClick={() =>
+                                  handleDelete(s.id, "solicitudes")
+                                }
                               >
                                 <X className="h-4 w-4" />
                               </Button>

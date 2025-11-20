@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Bell, ArrowRight, Car, Users, UserCheck, UserX, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase" // <--- IMPORTANTE
 import Link from "next/link"
 
 type Aviso = { id: string; titulo: string; };
@@ -36,12 +37,29 @@ export default function AsistenteDashboard() {
     const fetchResumen = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/resumen-hoy`);
+        // 1. OBTENER EL TOKEN DE SESIÓN
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        if (!token) {
+            // Si no hay token, redirigir al login (opcional, o dejar que falle)
+            throw new Error("No hay sesión activa");
+        }
+
+        // 2. ENVIARLO EN LOS HEADERS
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/resumen-hoy`, {
+          headers: {
+            'Authorization': `Bearer ${token}`, // <--- CLAVE DE ACCESO
+            'Content-Type': 'application/json'
+          }
+        });
+
         if (!response.ok) throw new Error("No se pudo cargar el resumen");
         const data = await response.json();
         setResumen(data);
       } catch (err: any) {
-        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+        console.error(err);
+        toast({ title: "Error", description: "No se pudieron cargar los datos.", variant: "destructive" });
       } finally {
         setLoading(false);
       }
@@ -53,13 +71,15 @@ export default function AsistenteDashboard() {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 
-  if (loading || !resumen) {
+  if (loading) {
     return (
       <AsistenteLayout title="Panel del Asistente">
         <div className="flex justify-center items-center h-64"><Loader2 className="h-10 w-10 animate-spin text-muted-foreground" /></div>
       </AsistenteLayout>
     );
   }
+
+  if (!resumen) return null;
 
   const botonAsistenciaDeshabilitado = !resumen.esDiaLectivo || resumen.asistenciaRegistrada;
   let cardDescription = "Listo para iniciar el recorrido.";
@@ -98,7 +118,6 @@ export default function AsistenteDashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         
-        {/* --- TARJETA DE VEHÍCULO (REDISEÑADA) --- */}
         <Card className="overflow-hidden col-span-1 md:col-span-2 lg:col-span-1">
             <div className="flex h-full">
                 <div className="p-6 flex-1 flex flex-col justify-center">
@@ -112,7 +131,6 @@ export default function AsistenteDashboard() {
                     </p>
                 </div>
                 
-                {/* Sección de la Imagen (Derecha) */}
                 <div className="w-32 h-auto bg-gray-100 dark:bg-gray-800 relative shrink-0 border-l">
                     {resumen.stats.vehiculo.fotoUrl ? (
                         <img 
@@ -128,7 +146,6 @@ export default function AsistenteDashboard() {
                 </div>
             </div>
         </Card>
-        {/* ----------------------------------------- */}
 
         <Card>
             <CardHeader className="pb-2 flex flex-row items-center gap-2"><Users className="h-4 w-4 text-muted-foreground" /><CardDescription>Total Alumnos</CardDescription></CardHeader>

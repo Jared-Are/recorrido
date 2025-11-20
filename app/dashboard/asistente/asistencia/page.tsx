@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { AsistenteLayout } from "@/components/asistente-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input"; // Input para el buscador
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase"; // <--- IMPORTANTE
 import { 
   CheckCircle2, 
   Loader2, 
@@ -31,7 +32,6 @@ export default function RegistrarAsistenciaPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   
-  // Nuevos estados
   const [searchTerm, setSearchTerm] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
@@ -40,7 +40,16 @@ export default function RegistrarAsistenciaPage() {
     const fetchAlumnosDelDia = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/alumnos-del-dia`);
+        // OBTENER TOKEN
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/alumnos-del-dia`, {
+            headers: {
+                'Authorization': `Bearer ${token}`, // <--- CABECERA DE AUTORIZACIÓN
+                'Content-Type': 'application/json'
+            }
+        });
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => null);
@@ -80,9 +89,9 @@ export default function RegistrarAsistenciaPage() {
     setIsConfirmOpen(true);
   };
 
-  // 5. Enviar datos al backend (Confirmado)
+  // 5. Enviar datos al backend
   const handleConfirmGuardar = async () => {
-    setIsConfirmOpen(false); // Cerrar modal
+    setIsConfirmOpen(false);
     setSending(true);
 
     const registros = alumnos.map(alumno => ({
@@ -94,9 +103,16 @@ export default function RegistrarAsistenciaPage() {
     const payload = { registros };
 
     try {
+      // OBTENER TOKEN PARA EL ENVÍO
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/registrar-lote`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Authorization': `Bearer ${token}`, // <--- AQUÍ TAMBIÉN
+            'Content-Type': 'application/json' 
+        },
         body: JSON.stringify(payload)
       });
 
@@ -140,7 +156,6 @@ export default function RegistrarAsistenciaPage() {
               Toca el botón de cada alumno para cambiar su estado.
             </CardDescription>
             
-            {/* --- BUSCADOR --- */}
             <div className="relative mt-2">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
@@ -153,7 +168,6 @@ export default function RegistrarAsistenciaPage() {
           </CardHeader>
 
           <CardContent className="space-y-3">
-            {/* Lista Vacía si no hay resultados de búsqueda */}
             {filteredAlumnos.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 No se encontraron alumnos con ese nombre.
@@ -169,10 +183,9 @@ export default function RegistrarAsistenciaPage() {
                     isAusente ? "bg-red-50 dark:bg-red-900/10 border-red-200" : "hover:bg-muted/50"
                   }`}
                 >
-                  {/* Información del Alumno */}
                   <div className="flex items-start gap-3 w-full sm:w-auto">
                     <div className={`mt-1 p-2 rounded-full ${isAusente ? 'bg-red-100 text-red-600' : 'bg-primary/10 text-primary'}`}>
-                       <User className="h-4 w-4" />
+                        <User className="h-4 w-4" />
                     </div>
                     <div>
                       <p className={`font-medium text-base ${isAusente ? 'text-red-700 dark:text-red-400' : ''}`}>
@@ -186,7 +199,6 @@ export default function RegistrarAsistenciaPage() {
                     </div>
                   </div>
 
-                  {/* --- BOTÓN DE ESTADO (Cambio solicitado) --- */}
                   <Button
                     variant={isAusente ? "destructive" : "outline"}
                     size="sm"
@@ -224,13 +236,8 @@ export default function RegistrarAsistenciaPage() {
         </Card>
       </div>
 
-      {/* --- MODAL DE CONFIRMACIÓN (CORREGIDO) --- */}
       {isConfirmOpen && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          {/* CAMBIOS AQUÍ: 
-             1. z-[100] en el div de arriba para tapar el menú de navegación.
-             2. mb-20 en el Card de abajo para subirlo y que no pegue con el borde inferior en móviles.
-          */}
           <Card className="w-full max-w-md shadow-xl animate-in slide-in-from-bottom-10 duration-300 mb-20 sm:mb-0">
             <CardHeader>
               <CardTitle>¿Confirmar Asistencia?</CardTitle>
