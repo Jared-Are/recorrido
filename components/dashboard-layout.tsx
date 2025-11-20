@@ -15,7 +15,7 @@ const getDashboardPath = (role: string): string => {
     switch (role.toLowerCase()) {
         case 'propietario':
         case 'admin':
-            return "/dashboard/propietario/alumnos"; // Ruta principal del admin
+            return "/dashboard/propietario"; // Ruta principal del admin
         case 'tutor':
             return "/dashboard/tutor";
         case 'asistente':

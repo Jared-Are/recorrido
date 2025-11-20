@@ -74,7 +74,7 @@ export default function ActualizarPasswordPage() {
       toast({ title: "¡Éxito!", description: "Contraseña actualizada. Bienvenido." });
       
       // Redirigir al dashboard
-      router.push("/dashboard/propietario/alumnos"); // O la ruta principal que prefieras
+      router.push("/dashboard/propietario"); // O la ruta principal que prefieras
       
     } catch (error: any) {
       console.error(error);
