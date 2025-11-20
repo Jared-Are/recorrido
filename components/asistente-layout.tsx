@@ -4,7 +4,9 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { LogOut, Sun, Moon, Users, CalendarCheck, BarChart3 } from "lucide-react"
-import type { User } from "@/lib/auth"
+import { supabase } from "@/lib/supabase" // <--- Usamos Supabase
+import { useRouter } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
 
 interface AsistenteLayoutProps {
   children: React.ReactNode
@@ -12,10 +14,24 @@ interface AsistenteLayoutProps {
 }
 
 export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
-  const pathname = typeof window !== "undefined" ? window.location.pathname : ""
-  const [user, setUser] = useState<User | null>(null)
+  const router = useRouter()
+  const { toast } = useToast()
+  
+  // Estado para la ruta actual (para marcar el activo en el menú)
+  const [pathname, setPathname] = useState("")
+  
+  // Estado del usuario (Adaptado para Supabase)
+  const [user, setUser] = useState<{ name: string; email?: string } | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
+  const [loading, setLoading] = useState(true)
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setPathname(window.location.pathname)
+    }
+  }, [])
+
+  // 1. Lógica de Tema (Original tuya)
   useEffect(() => {
     const theme = localStorage.getItem("app-theme")
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -39,27 +55,57 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
     }
   }
 
+  // 2. Lógica de Autenticación (Adaptada a Supabase)
   useEffect(() => {
-    const storedUser = localStorage.getItem("currentUser")
-    if (!storedUser) {
-      window.location.href = "/"
-    } else {
-      setUser(JSON.parse(storedUser))
-    }
-  }, [])
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session) {
+          window.location.href = "/login"
+          return
+        }
 
-  const handleLogout = () => {
-    localStorage.removeItem("currentUser")
+        // Validamos rol (para que no entre un padre aquí)
+        const rol = session.user.user_metadata?.rol?.toLowerCase()
+        if (rol !== 'asistente' && rol !== 'propietario') {
+          toast({ title: "Acceso denegado", description: "No tienes permiso de asistente", variant: "destructive" })
+          window.location.href = "/login"
+          return
+        }
+
+        // Extraemos el nombre para mostrarlo en el header
+        setUser({
+          name: session.user.user_metadata?.nombre || session.user.email || "Asistente",
+          email: session.user.email
+        })
+        
+      } catch (error) {
+        console.error("Error auth:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [toast])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    localStorage.removeItem("rememberedUser") // Opcional, si quieres olvidar el "Recordarme"
     window.location.href = "/"
   }
 
-  if (!user) {
+  if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-foreground">
         Cargando...
       </div>
     )
   }
+
+  // Si no hay usuario y ya cargó, no mostramos nada (el useEffect redirige)
+  if (!user && !loading) return null
 
   const navItems = [
     { title: "Resumen", icon: Users, href: "/dashboard/asistente" },
@@ -69,6 +115,7 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* Header Superior */}
       <header className="bg-card border-b border-border sticky top-0 z-40">
         <div className="flex items-center justify-between px-4 py-3 md:px-6">
           <div>
@@ -87,8 +134,10 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
         </div>
       </header>
 
+      {/* Contenido Principal */}
       <main className="flex-1 p-4 md:p-6 pb-20">{children}</main>
 
+      {/* Barra de Navegación Inferior (Tu diseño original) */}
       <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center">
         {navItems.map((item) => {
           const isActive = pathname === item.href

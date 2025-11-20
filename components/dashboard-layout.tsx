@@ -1,14 +1,30 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useEffect, useState } from "react"
-import { useRouter, usePathname } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { LogOut, Menu, X, Sun, Moon, LayoutDashboard } from "lucide-react"
-import { type User, getDashboardPath } from "@/lib/auth"
-import Link from "next/link"
-import { motion, AnimatePresence } from "framer-motion"
+import { useState, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { LogOut, Menu, X, Sun, Moon, LayoutDashboard, Loader2 } from "lucide-react";
+// Importamos Supabase para la verificación
+import { supabase } from "@/lib/supabase"; 
+import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 import type { LucideIcon } from "lucide-react"
+
+// La función que tenías para obtener la ruta del dashboard
+const getDashboardPath = (role: string): string => {
+    switch (role.toLowerCase()) {
+        case 'propietario':
+        case 'admin':
+            return "/dashboard/propietario/alumnos"; // Ruta principal del admin
+        case 'tutor':
+            return "/dashboard/tutor";
+        case 'asistente':
+            return "/dashboard/asistente";
+        default:
+            return "/";
+    }
+};
+
 
 export interface MenuItem {
   title: string;
@@ -26,12 +42,15 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title, menuItems }: DashboardLayoutProps) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const [user, setUser] = useState<User | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const router = useRouter();
+  const pathname = usePathname();
+  // Almacenamos el nombre y rol real del usuario
+  const [user, setUser] = useState<{ name: string; role: string } | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [loading, setLoading] = useState(true);
 
+  // --- Lógica de Tema (Dejamos tu código original) ---
   useEffect(() => {
     const theme = localStorage.getItem("app-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -55,39 +74,58 @@ export function DashboardLayout({ children, title, menuItems }: DashboardLayoutP
     }
   }
 
+  // --- Lógica de Autenticación con Supabase ---
   useEffect(() => {
-    const storedUser = localStorage.getItem("currentUser")
-    if (!storedUser) {
-      router.push("/")
-    } else {
-      setUser(JSON.parse(storedUser))
-    }
-  }, [router])
+    const checkAuth = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (!session) {
+                // Si no hay sesión, ir al login
+                router.push("/");
+                return;
+            }
+            
+            const userMetadata = session.user.user_metadata;
+            const rol = userMetadata?.rol?.toLowerCase();
+            
+            // 1. Verificar si el rol es el adecuado para ESTE layout
+            if (rol !== 'propietario' && rol !== 'admin') {
+                // Si es un tutor o asistente, redirigirlo a su dashboard
+                router.push(getDashboardPath(rol)); 
+                return;
+            }
 
-  // --- Bloque de depuración movido ANTES del return condicional ---
-  useEffect(() => {
-      if (user) {
-          const mainDashboardPath = getDashboardPath(user.role);
-          const isSubPage = pathname !== mainDashboardPath;
-          console.log("--- DEBUGGING INFO ---");
-          console.log("Usuario actual:", user);
-          console.log("Rol del usuario:", user.role);
-          console.log("Ruta principal calculada:", mainDashboardPath);
-          console.log("Ruta actual (pathname):", pathname);
-          console.log("¿Es una subpágina?:", isSubPage);
-          console.log("----------------------");
-      }
-  }, [user, pathname]);
-  // --- FIN del bloque movido ---
+            // 2. Cargar datos del usuario
+            setUser({
+                name: userMetadata?.nombre || session.user.email || 'Admin',
+                role: rol
+            });
 
-  const handleLogout = () => {
-    localStorage.removeItem("currentUser")
-    router.push("/")
+        } catch (error) {
+            console.error("Error al verificar sesión del Propietario:", error);
+            router.push("/");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    checkAuth();
+  }, [router]);
+
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem("rememberedUser");
+    router.push("/");
   }
 
-  if (!user) {
-    return <div className="flex h-screen items-center justify-center bg-background text-foreground">Cargando...</div>
+  if (loading) {
+     return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="h-10 w-10 animate-spin text-blue-600" /></div>
   }
+  
+  // Si no se pudo cargar el usuario (o fue redirigido) no renderizamos nada
+  if (!user) return null;
 
   const mainDashboardPath = getDashboardPath(user.role);
   const isSubPage = pathname !== mainDashboardPath;
@@ -125,7 +163,7 @@ export function DashboardLayout({ children, title, menuItems }: DashboardLayoutP
                 <div className="p-4 border-b flex justify-between items-center">
                     <h2 className="font-bold text-lg">Menú</h2>
                     <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
-                        <X className="h-6 w-6" />
+                      <X className="h-6 w-6" />
                     </Button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -166,4 +204,3 @@ export function DashboardLayout({ children, title, menuItems }: DashboardLayoutP
     </div>
   )
 }
-

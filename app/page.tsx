@@ -40,13 +40,12 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    // --- DEBUGGING LOGS (Abre la consola con F12 para ver esto) ---
-    console.log("1. Iniciando login con usuario:", identifier);
+    console.log("1. Iniciando login con:", identifier);
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-      console.log("2. Consultando backend en:", apiUrl);
       
+      // PASO 1: Buscar usuario en backend
       const lookupRes = await fetch(`${apiUrl}/users/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,28 +53,35 @@ export default function LoginPage() {
       });
 
       if (!lookupRes.ok) {
-        console.error("Error Backend:", lookupRes.status, await lookupRes.text());
         throw new Error("Usuario no encontrado en el sistema.");
       }
 
-      const dataBackend = await lookupRes.json();
-      const realEmail = dataBackend.email;
+      const { email: realEmail, rol: rawRole } = await lookupRes.json();
+      const realRole = rawRole ? rawRole.toLowerCase().trim() : "";
       
-      console.log("3. Email encontrado por backend:", realEmail);
-      console.log("4. Intentando login en Supabase con:", { email: realEmail, password: '***' });
+      console.log("2. Datos encontrados:", { email: realEmail, rol: realRole });
 
+      // PASO 2: Login en Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email: realEmail,
         password: password,
       });
 
-      if (error) {
-        console.error("5. Error Supabase:", error.message);
-        throw error;
+      if (error) throw error;
+
+      // --- ¡EL TRUCO DE MAGIA AQUÍ! --- 🪄
+      // Actualizamos la metadata de la sesión de Supabase para que coincida con la BD.
+      // Esto arregla usuarios viejos que no tenían el rol en su metadata.
+      if (data.user && data.user.user_metadata?.rol !== realRole) {
+          console.log("🔄 Sincronizando rol en Supabase...");
+          await supabase.auth.updateUser({
+            data: { rol: realRole }
+          });
+          // Refrescamos la sesión para que el cambio surta efecto inmediato
+          await supabase.auth.refreshSession();
       }
 
-      console.log("6. ¡Login Exitoso!", data);
-
+      // PASO 3: Guardar preferencia
       if (remember) {
         localStorage.setItem("rememberedUser", identifier);
       } else {
@@ -84,31 +90,40 @@ export default function LoginPage() {
 
       toast({ title: "Bienvenido", description: "Accediendo al sistema..." });
 
-      const rol = data.user?.user_metadata?.rol;
-      console.log("7. Rol detectado:", rol);
+      // PASO 4: Redirección
+      console.log("3. Redirigiendo a:", realRole);
 
-      switch (rol) {
+      switch (realRole) {
         case 'propietario':
-          router.push("/dashboard/propietario/alumnos");
+        case 'admin':
+          router.push("/dashboard/propietario");
           break;
         case 'tutor':
+        case 'padre':
           router.push("/dashboard/tutor"); 
           break;
         case 'asistente':
           router.push("/dashboard/asistente");
           break;
         default:
-          router.push("/dashboard/propietario/alumnos");
+          // Si es chofer o algo no mapeado
+          if (realRole === 'chofer') {
+             // router.push("/dashboard/chofer"); // Descomentar cuando exista
+             toast({ title: "Aviso", description: "El panel de chofer está en construcción." });
+          } else {
+             setError(`Tu usuario tiene rol "${realRole}" y no tiene panel asignado.`);
+             await supabase.auth.signOut(); // Salir para evitar bucle
+          }
       }
 
     } catch (err: any) {
-      console.error("❌ Error final:", err);
-      if (err.message === "Usuario no encontrado en el sistema.") {
-         setError("El usuario ingresado no existe en nuestra base de datos.");
-      } else if (err.message.includes("Invalid login credentials")) {
-         setError("Contraseña incorrecta. Verifica o pide un nuevo link.");
+      console.error("Error login:", err);
+      if (err.message?.includes("Usuario no encontrado")) {
+         setError("El usuario ingresado no existe.");
+      } else if (err.message?.includes("Invalid login credentials")) {
+         setError("Contraseña incorrecta.");
       } else {
-         setError("Error de conexión. Revisa la consola (F12).");
+         setError("Error de conexión o credenciales inválidas.");
       }
     } finally {
       setLoading(false);
@@ -187,6 +202,9 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
+          <div className="mt-6 text-center text-xs text-muted-foreground">
+            <p>¿Olvidaste tu contraseña? Contacta al administrador.</p>
+          </div>
         </CardContent>
       </Card>
     </div>

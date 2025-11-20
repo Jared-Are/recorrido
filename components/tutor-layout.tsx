@@ -3,8 +3,13 @@
 import type React from "react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { LogOut, Sun, Moon, Users, BarChart2, DollarSign } from "lucide-react"
-import type { User } from "@/lib/auth"
+// Importaciones de iconos corregidas para incluir Home y CalendarCheck
+import { LogOut, Sun, Moon, Users, DollarSign, Loader2, Home, Bell, CalendarCheck } 
+from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
+import Link from "next/link"
 
 interface TutorLayoutProps {
   children: React.ReactNode
@@ -12,11 +17,21 @@ interface TutorLayoutProps {
 }
 
 export function TutorLayout({ children, title }: TutorLayoutProps) {
-  const pathname = typeof window !== "undefined" ? window.location.pathname : ""
-  const [user, setUser] = useState<User | null>(null)
+  const router = useRouter()
+  const { toast } = useToast()
+  
+  const [pathname, setPathname] = useState("")
+  const [user, setUser] = useState<{ name: string; role: string; email?: string } | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  // --- Tema persistente ---
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setPathname(window.location.pathname)
+    }
+  }, [])
+
+  // --- Tema persistente (Tu código original) ---
   useEffect(() => {
     const theme = localStorage.getItem("app-theme")
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -40,38 +55,74 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
     }
   }
 
-  // --- Sesión ---
+  // --- Lógica de Autenticación con Supabase ---
   useEffect(() => {
-    const storedUser = localStorage.getItem("currentUser")
-    if (!storedUser) {
-      window.location.href = "/"
-    } else {
-      setUser(JSON.parse(storedUser))
-    }
-  }, [])
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session) {
+          window.location.href = "/" 
+          return
+        }
 
-  const handleLogout = () => {
-    localStorage.removeItem("currentUser")
-    window.location.href = "/"
+        const userMetadata = session.user.user_metadata;
+        const rol = userMetadata?.rol?.toLowerCase();
+        
+        // PERMISOS: Solo acepta 'tutor' o 'propietario'
+        if (rol !== 'tutor' && rol !== 'propietario' && rol !== 'padre') {
+          console.warn("⛔ Rol no autorizado para Layout Tutor:", rol);
+          toast({ title: "Acceso Denegado", description: `Tu rol (${rol}) no tiene permiso.`, variant: "destructive" })
+          window.location.href = "/" 
+          return
+        }
+
+        // Extraemos el nombre para el header
+        setUser({
+          name: userMetadata?.nombre || session.user.email || "Tutor Familiar",
+          role: rol,
+          email: session.user.email
+        })
+        
+      } catch (error) {
+        console.error("Error verificando sesión del Tutor:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [toast, router]) 
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    localStorage.removeItem("rememberedUser")
+    window.location.href = "/" // Redirigir a la raíz (Login)
   }
 
-  if (!user) {
+  if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-foreground">
-        Cargando...
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
       </div>
     )
   }
 
+  // Si no hay usuario, ya fue redirigido por el useEffect
+  if (!user) return null
+
+  // NOTA: Usamos CalendarCheck en lugar de BarChart2 que tenías antes
   const navItems = [
-    { title: "Resumen", icon: Users, href: "/dashboard/tutor" },
-    { title: "Asistencias", icon: BarChart2, href: "/dashboard/tutor/asistencias" },
+    { title: "Resumen", icon: Home, href: "/dashboard/tutor" },
+    { title: "Asistencia", icon: CalendarCheck, href: "/dashboard/tutor/asistencia" },
     { title: "Pagos", icon: DollarSign, href: "/dashboard/tutor/pagos" },
+    { title: "Avisos", icon: Bell, href: "/dashboard/tutor/avisos" },
   ]
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <header className="bg-card border-b border-border sticky top-0 z-40">
+      {/* Header Superior */}
+      <header className="bg-card border-b border-border sticky top-0 z-40 shadow-sm">
         <div className="flex items-center justify-between px-4 py-3 md:px-6">
           <div>
             <h1 className="text-lg font-bold text-foreground">{title}</h1>
@@ -89,22 +140,24 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
         </div>
       </header>
 
+      {/* Contenido Principal */}
       <main className="flex-1 p-4 md:p-6 pb-20">{children}</main>
 
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center">
+      {/* Barra de Navegación Inferior (Tu diseño original) */}
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center shadow-lg">
         {navItems.map((item) => {
           const isActive = pathname === item.href
           return (
-            <a key={item.title} href={item.href}>
+            <Link key={item.title} href={item.href}>
               <div
                 className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg ${
-                  isActive ? "text-primary" : "text-muted-foreground"
+                  isActive ? "text-primary bg-muted" : "text-muted-foreground"
                 }`}
               >
                 <item.icon className="h-6 w-6" />
                 <span className="text-xs font-medium">{item.title}</span>
               </div>
-            </a>
+            </Link>
           )
         })}
       </nav>
