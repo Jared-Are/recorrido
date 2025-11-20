@@ -21,13 +21,12 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   
-  const [identifier, setIdentifier] = useState(""); // "Usuario" (puede ser username, tel o email)
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Recuperar usuario guardado si marcó "Recordarme"
   useEffect(() => {
     const savedUser = localStorage.getItem("rememberedUser");
     if (savedUser) {
@@ -41,10 +40,12 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
+    // --- DEBUGGING LOGS (Abre la consola con F12 para ver esto) ---
+    console.log("1. Iniciando login con usuario:", identifier);
+
     try {
-      // PASO 1: Averiguar el EMAIL real detrás del Usuario/Teléfono
-      // Llamamos a nuestro propio backend para esto
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      console.log("2. Consultando backend en:", apiUrl);
       
       const lookupRes = await fetch(`${apiUrl}/users/lookup`, {
         method: "POST",
@@ -53,35 +54,42 @@ export default function LoginPage() {
       });
 
       if (!lookupRes.ok) {
-        // Si el backend no encuentra el usuario
+        console.error("Error Backend:", lookupRes.status, await lookupRes.text());
         throw new Error("Usuario no encontrado en el sistema.");
       }
 
-      const { email: realEmail } = await lookupRes.json();
+      const dataBackend = await lookupRes.json();
+      const realEmail = dataBackend.email;
+      
+      console.log("3. Email encontrado por backend:", realEmail);
+      console.log("4. Intentando login en Supabase con:", { email: realEmail, password: '***' });
 
-      // PASO 2: Login en Supabase usando el EMAIL recuperado
       const { data, error } = await supabase.auth.signInWithPassword({
         email: realEmail,
         password: password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("5. Error Supabase:", error.message);
+        throw error;
+      }
 
-      // PASO 3: Guardar preferencia "Recordarme"
+      console.log("6. ¡Login Exitoso!", data);
+
       if (remember) {
-        localStorage.setItem("rememberedUser", identifier); // Guardamos lo que escribió el usuario
+        localStorage.setItem("rememberedUser", identifier);
       } else {
         localStorage.removeItem("rememberedUser");
       }
 
       toast({ title: "Bienvenido", description: "Accediendo al sistema..." });
 
-      // PASO 4: Redirección según ROL
       const rol = data.user?.user_metadata?.rol;
+      console.log("7. Rol detectado:", rol);
 
       switch (rol) {
         case 'propietario':
-          router.push("/dashboard/propietario");
+          router.push("/dashboard/propietario/alumnos");
           break;
         case 'tutor':
           router.push("/dashboard/tutor"); 
@@ -90,19 +98,17 @@ export default function LoginPage() {
           router.push("/dashboard/asistente");
           break;
         default:
-          // Si no tiene rol o es desconocido, lo mandamos al login o home
-          router.push("/login"); 
+          router.push("/dashboard/propietario/alumnos");
       }
 
     } catch (err: any) {
-      console.error(err);
-      // Mensaje amigable para el usuario
+      console.error("❌ Error final:", err);
       if (err.message === "Usuario no encontrado en el sistema.") {
-         setError("El usuario ingresado no existe.");
+         setError("El usuario ingresado no existe en nuestra base de datos.");
       } else if (err.message.includes("Invalid login credentials")) {
-         setError("Contraseña incorrecta.");
+         setError("Contraseña incorrecta. Verifica o pide un nuevo link.");
       } else {
-         setError("Error al iniciar sesión. Verifica tus datos.");
+         setError("Error de conexión. Revisa la consola (F12).");
       }
     } finally {
       setLoading(false);
@@ -117,20 +123,20 @@ export default function LoginPage() {
             <Bus className="w-8 h-8 text-primary-foreground" />
           </div>
           <CardTitle className="text-2xl font-bold text-balance">
-            Recorrido Escolar Arévalo Hernández
+            Recorrido Escolar
           </CardTitle>
           <CardDescription className="text-pretty">
-            Ingresa tus credenciales para acceder al sistema
+            Ingresa tus credenciales para acceder
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="identifier">Usuario</Label>
+              <Label htmlFor="identifier">Usuario o Teléfono</Label>
               <Input
                 id="identifier"
                 type="text"
-                placeholder="Ej: juan.perez o 5058888..."
+                placeholder="Ej: juan.perez"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 required
@@ -174,17 +180,13 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Iniciando...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verificando...
                 </>
               ) : (
                 "Iniciar Sesión"
               )}
             </Button>
           </form>
-          
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-             ¿Problemas para entrar? Contacta al administrador.
-          </div>
         </CardContent>
       </Card>
     </div>
