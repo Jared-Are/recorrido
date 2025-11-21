@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { createClient } from '@supabase/supabase-js'; // 1. Supabase
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,16 +20,12 @@ import {
     Loader2,
     Upload,
     Image as ImageIcon,
-    X
+    X,
+    AlertTriangle
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-
-// 2. Cliente Supabase
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase"; // <-- Usa el cliente unificado
 
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
@@ -45,12 +40,14 @@ const menuItems: MenuItem[] = [
 
 export default function EditarVehiculoPage() {
   const router = useRouter();
-  const { id } = useParams(); // Obtener ID de la URL
+  const params = useParams();
+  const id = params.id as string; // <-- Obtener ID correctamente
   const { toast } = useToast();
   
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // <-- Iniciar en true para carga inicial
   const [uploading, setUploading] = useState(false);
-  const [fotoUrl, setFotoUrl] = useState(""); // Estado de la foto
+  const [fotoUrl, setFotoUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -59,47 +56,102 @@ export default function EditarVehiculoPage() {
     modelo: "",
     anio: "",
     capacidad: "",
+    estado: "activo"
   });
 
-  // 3. Cargar datos del vehículo al iniciar
+  // Cargar datos del vehículo con autenticación
   useEffect(() => {
     const fetchVehiculo = async () => {
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`);
-            if (!res.ok) throw new Error("Error al cargar vehículo");
-            const data = await res.json();
-            
-            setFormData({
-                nombre: data.nombre,
-                placa: data.placa,
-                marca: data.marca,
-                modelo: data.modelo,
-                anio: data.anio,
-                capacidad: data.capacidad
-            });
-            
-            // Si ya tenía foto, la cargamos
-            if (data.fotoUrl) setFotoUrl(data.fotoUrl);
+      if (!id) {
+        setError("ID no válido");
+        setLoading(false);
+        return;
+      }
 
-        } catch (error) {
-            toast({ title: "Error", description: "No se encontró el vehículo", variant: "destructive" });
-            router.push("/dashboard/propietario/vehiculos");
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setError("No hay sesión activa");
+          return;
         }
+
+        const token = session.access_token;
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error("Vehículo no encontrado");
+          }
+          throw new Error(`Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        setFormData({
+          nombre: data.nombre || "",
+          placa: data.placa || "",
+          marca: data.marca || "",
+          modelo: data.modelo || "",
+          anio: data.anio?.toString() || "",
+          capacidad: data.capacidad?.toString() || "",
+          estado: data.estado || "activo"
+        });
+        
+        if (data.fotoUrl) setFotoUrl(data.fotoUrl);
+
+      } catch (err: any) {
+        console.error("Error cargando vehículo:", err);
+        setError(err.message);
+        toast({ 
+          title: "Error", 
+          description: err.message, 
+          variant: "destructive" 
+        });
+      } finally {
+        setLoading(false);
+      }
     };
-    if (id) fetchVehiculo();
-  }, [id, toast, router]);
+
+    fetchVehiculo();
+  }, [id, toast]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 4. Subida de Imagen (Misma lógica que en Crear)
+  // Subida de Imagen
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0) return;
+      
       setUploading(true);
       const file = e.target.files[0];
+
+      // Validaciones
+      if (!file.type.startsWith('image/')) {
+        toast({ 
+          title: "Error", 
+          description: "Solo se permiten archivos de imagen", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ 
+          title: "Error", 
+          description: "La imagen no puede ser mayor a 5MB", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `${fileName}`;
@@ -112,10 +164,18 @@ export default function EditarVehiculoPage() {
 
       const { data } = supabase.storage.from('vehiculos').getPublicUrl(filePath);
       setFotoUrl(data.publicUrl);
-      toast({ title: "Imagen actualizada", description: "Recuerda guardar los cambios." });
+      toast({ 
+        title: "Imagen actualizada", 
+        description: "Recuerda guardar los cambios." 
+      });
 
     } catch (error: any) {
-      toast({ title: "Error al subir imagen", description: error.message, variant: "destructive" });
+      console.error("Error subiendo imagen:", error);
+      toast({ 
+        title: "Error al subir imagen", 
+        description: error.message, 
+        variant: "destructive" 
+      });
     } finally {
       setUploading(false);
     }
@@ -125,36 +185,123 @@ export default function EditarVehiculoPage() {
     setFotoUrl("");
   };
 
-  // 5. Guardar Cambios (PATCH)
+  // Guardar Cambios con autenticación
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const payload = {
-      ...formData,
-      anio: parseInt(formData.anio) || undefined,
-      capacidad: parseInt(formData.capacidad) || undefined,
-      fotoUrl: fotoUrl, // <-- Enviamos la nueva URL (o la vieja, o vacío)
-    };
-
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ 
+          title: "Error", 
+          description: "No hay sesión activa", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      const token = session.access_token;
+
+      // Validaciones
+      if (!formData.nombre.trim() || !formData.placa.trim()) {
+        toast({ 
+          title: "Error", 
+          description: "Nombre y placa son campos obligatorios", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      const payload = {
+        nombre: formData.nombre.trim(),
+        placa: formData.placa.trim().toUpperCase(),
+        marca: formData.marca.trim() || undefined,
+        modelo: formData.modelo.trim() || undefined,
+        anio: formData.anio ? parseInt(formData.anio) : undefined,
+        capacidad: formData.capacidad ? parseInt(formData.capacidad) : undefined,
+        estado: formData.estado,
+        fotoUrl: fotoUrl || undefined,
+      };
+
+      console.log("Actualizando vehículo:", payload);
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`, {
-        method: 'PATCH', // Método PATCH para editar
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error("No se pudo actualizar el vehículo");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Error del servidor: ${response.status}`);
+      }
 
-      toast({ title: "Vehículo Actualizado", description: "Los cambios se guardaron correctamente." });
+      toast({ 
+        title: "Vehículo Actualizado", 
+        description: "Los cambios se guardaron correctamente." 
+      });
+      
       router.push("/dashboard/propietario/vehiculos");
+      router.refresh();
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: (err as Error).message, variant: "destructive" });
+      console.error("Error guardando:", err);
+      toast({ 
+        title: "Error al guardar", 
+        description: err.message, 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
   };
+
+  // Estados de carga y error
+  if (loading) {
+    return (
+      <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
+        <div className="space-y-6">
+          <Link href="/dashboard/propietario/vehiculos">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Volver a la lista
+            </Button>
+          </Link>
+          <div className="flex justify-center items-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="ml-3 text-muted-foreground">Cargando vehículo...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
+        <div className="space-y-6">
+          <Link href="/dashboard/propietario/vehiculos">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Volver a la lista
+            </Button>
+          </Link>
+          <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
+            <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+            <h3 className="text-lg font-bold text-red-700 mb-2">Error al cargar vehículo</h3>
+            <p className="text-muted-foreground max-w-md">{error}</p>
+            <Button className="mt-4" onClick={() => router.push("/dashboard/propietario/vehiculos")}>
+              Volver a la lista
+            </Button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
@@ -174,7 +321,7 @@ export default function EditarVehiculoPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               
-              {/* --- SECCIÓN FOTO --- */}
+              {/* Sección Foto */}
               <div className="space-y-2">
                   <Label>Fotografía de la Unidad</Label>
                   <div className="flex items-start gap-6 border p-4 rounded-lg bg-gray-50 dark:bg-gray-900/20">
@@ -223,47 +370,100 @@ export default function EditarVehiculoPage() {
                   </div>
               </div>
 
-              {/* --- CAMPOS DE TEXTO (Con valores cargados) --- */}
+              {/* Campos del formulario */}
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre o Apodo</Label>
-                  <Input id="nombre" name="nombre" value={formData.nombre} onChange={handleChange} required />
+                  <Label htmlFor="nombre">Nombre o Apodo *</Label>
+                  <Input 
+                    id="nombre" 
+                    name="nombre" 
+                    value={formData.nombre} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
                  <div className="space-y-2">
-                  <Label htmlFor="placa">Placa</Label>
-                   <Input id="placa" name="placa" value={formData.placa} onChange={handleChange} required />
+                  <Label htmlFor="placa">Placa *</Label>
+                   <Input 
+                    id="placa" 
+                    name="placa" 
+                    value={formData.placa} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                  <div className="space-y-2">
                   <Label htmlFor="marca">Marca</Label>
-                  <Input id="marca" name="marca" value={formData.marca} onChange={handleChange} />
+                  <Input 
+                    id="marca" 
+                    name="marca" 
+                    value={formData.marca} 
+                    onChange={handleChange} 
+                    disabled={loading}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="modelo">Modelo</Label>
-                  <Input id="modelo" name="modelo" value={formData.modelo} onChange={handleChange} />
+                  <Input 
+                    id="modelo" 
+                    name="modelo" 
+                    value={formData.modelo} 
+                    onChange={handleChange} 
+                    disabled={loading}
+                  />
                 </div>
               </div>
 
                <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="anio">Año</Label>
-                  <Input id="anio" name="anio" type="number" value={formData.anio} onChange={handleChange} />
+                  <Input 
+                    id="anio" 
+                    name="anio" 
+                    type="number" 
+                    value={formData.anio} 
+                    onChange={handleChange} 
+                    disabled={loading}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="capacidad">Capacidad</Label>
-                  <Input id="capacidad" name="capacidad" type="number" value={formData.capacidad} onChange={handleChange} />
+                  <Label htmlFor="capacidad">Capacidad (Asientos)</Label>
+                  <Input 
+                    id="capacidad" 
+                    name="capacidad" 
+                    type="number" 
+                    value={formData.capacidad} 
+                    onChange={handleChange} 
+                    disabled={loading}
+                  />
                 </div>
               </div>
 
+              {/* Campo estado oculto */}
+              <input 
+                type="hidden" 
+                name="estado" 
+                value={formData.estado} 
+              />
+
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading || uploading}>
-                  {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  {loading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                  )}
                   {loading ? "Guardando..." : "Guardar Cambios"}
                 </Button>
                 <Link href="/dashboard/propietario/vehiculos">
-                    <Button type="button" variant="outline">Cancelar</Button>
+                    <Button type="button" variant="outline" disabled={loading}>
+                      Cancelar
+                    </Button>
                 </Link>
               </div>
             </form>

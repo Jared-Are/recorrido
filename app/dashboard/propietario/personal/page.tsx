@@ -27,8 +27,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabase" // <--- Importamos Supabase
-import type { RequestInit } from "next/dist/server/web/spec-extension/request" // Para tipado de fetch
+import { supabase } from "@/lib/supabase"
 
 // --- TIPO PERSONAL (ACTUALIZADO) ---
 export type Personal = {
@@ -40,7 +39,7 @@ export type Personal = {
     fechaContratacion: string; 
     estado: "activo" | "inactivo" | "eliminado";
     vehiculoId: string | null;
-    vehiculo?: { // El objeto 'vehiculo' ahora viene cargado (eager)
+    vehiculo?: {
         id: string;
         nombre: string;
     }
@@ -87,10 +86,10 @@ export default function PersonalPage() {
 
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal?estado=${estadoFilter}`, { headers });
 
-            // --- CORRECCIÓN CRÍTICA PARA MANEJAR TABLA VACÍA ---
+            // Manejo de tablas vacías
             if (!response.ok) {
                 if (response.status === 404 || response.status === 204) {
-                    setPersonal([]); // Lista vacía
+                    setPersonal([]);
                 } else {
                     const errorData = await response.json().catch(() => ({}));
                     throw new Error(errorData.message || `Error del servidor (${response.status})`);
@@ -129,8 +128,12 @@ export default function PersonalPage() {
     const cambiarEstadoPersonal = async (id: string, nuevoEstado: "activo" | "inactivo" | "eliminado") => {
         const empleado = personal.find(p => p.id === id);
         if (!empleado) return;
-        
-        if (!window.confirm(`¿Estás seguro de mover a "${empleado.nombre}" a ${nuevoEstado}?`)) return;
+
+        const confirmMessage = nuevoEstado === 'eliminado' 
+            ? `¿Estás seguro de ELIMINAR permanentemente a ${empleado.nombre}? Esta acción no se puede deshacer.`
+            : `¿Estás seguro de ${nuevoEstado === 'inactivo' ? 'DESACTIVAR' : 'ACTIVAR'} a ${empleado.nombre}?`;
+            
+        if (!window.confirm(confirmMessage)) return;
 
         try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -164,10 +167,10 @@ export default function PersonalPage() {
                 throw new Error("No se pudo actualizar el estado del empleado");
             }
             
-            fetchPersonal(); // Recargar datos para reflejar el cambio
+            setPersonal(prevPersonal => prevPersonal.filter(p => p.id !== id));
 
             let mensaje = "";
-            if (nuevoEstado === "eliminado") mensaje = "Empleado eliminado permanentemente";
+            if (nuevoEstado === "eliminado") mensaje = "Empleado eliminado correctamente";
             if (nuevoEstado === "inactivo") mensaje = "Empleado desactivado correctamente";
             if (nuevoEstado === "activo") mensaje = "Empleado activado correctamente";
 
@@ -192,14 +195,13 @@ export default function PersonalPage() {
             </DashboardLayout>
         );
     }
-    
-    // Si hay error y no hay datos que mostrar
+
     if (error && personal.length === 0) {
         return (
             <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
                 <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
                     <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos iniciales</h3>
+                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
                     <p className="text-muted-foreground max-w-md">{error}</p>
                     <Button className="mt-4" onClick={fetchPersonal}>
                         Intentar de nuevo
@@ -209,11 +211,11 @@ export default function PersonalPage() {
         );
     }
 
-
     return (
         <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
             <div className="space-y-6">
 
+                {/* --- TARJETAS DE RESUMEN (ESTILO ORIGINAL) --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Card>
                         <CardHeader className="pb-2">
@@ -233,16 +235,9 @@ export default function PersonalPage() {
                             <div className="text-xl md:text-2xl font-bold text-green-600">C${formatCurrency(totalSalarios)}</div>
                         </CardContent>
                     </Card>
-                    <Card className="flex items-center justify-center p-4">
-                        <Link href="/dashboard/propietario/personal/nuevo" className="w-full">
-                            <Button className="w-full h-12 text-base">
-                                <Plus className="h-5 w-5 mr-2" />
-                                Registrar Personal
-                            </Button>
-                        </Link>
-                    </Card>
                 </div>
 
+                {/* --- CONTROLES DE BÚSQUEDA Y ACCIÓN (ESTILO ORIGINAL) --- */}
                 <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
                     <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
                         <div className="relative w-full sm:max-w-sm">
@@ -264,7 +259,12 @@ export default function PersonalPage() {
                             </SelectContent>
                         </Select>
                     </div>
-                    {/* El botón de Añadir está en la tarjeta de resumen para desktop */}
+                    <Link href="/dashboard/propietario/personal/nuevo" className="w-full sm:w-auto">
+                        <Button className="w-full">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Registrar Personal
+                        </Button>
+                    </Link>
                 </div>
 
                 {/* --- MENSAJE DE TABLA VACÍA --- */}
@@ -286,12 +286,11 @@ export default function PersonalPage() {
                     </Card>
                 )}
 
-
-                {/* --- TABLA --- */}
+                {/* --- TABLA (SOLO SI HAY DATOS) --- */}
                 {personal.length > 0 && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Lista de Personal ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})</CardTitle>
+                            <CardTitle>Personal ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})</CardTitle>
                             <CardDescription>Lista de todo el personal de la empresa.</CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -309,65 +308,68 @@ export default function PersonalPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredPersonal.length === 0 && (
+                                        {filteredPersonal.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={7} className="text-center h-24">No se encontró personal que coincida con los filtros.</TableCell>
+                                                <TableCell colSpan={7} className="text-center h-24">
+                                                    No se encontró personal que coincida con los filtros.
+                                                </TableCell>
                                             </TableRow>
+                                        ) : (
+                                            filteredPersonal.map((p) => (
+                                                <TableRow key={p.id}>
+                                                    <TableCell className="font-medium whitespace-nowrap">{p.nombre}</TableCell>
+                                                    <TableCell>
+                                                        <Badge variant={p.puesto === 'Chofer' ? 'default' : 'secondary'}>
+                                                            {p.puesto}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="whitespace-nowrap">{p.contacto || "N/A"}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">C${formatCurrency(p.salario)}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">{p.vehiculo?.nombre || "N/A"}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">
+                                                        {p.fechaContratacion ? new Date(p.fechaContratacion + "T00:00:00").toLocaleDateString('es-NI') : "N/A"}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <Link href={`/dashboard/propietario/personal/${p.id}`}>
+                                                                <Button variant="ghost" size="icon" title="Editar">
+                                                                    <Pencil className="h-4 w-4" />
+                                                                </Button>
+                                                            </Link>
+                                                            
+                                                            {p.estado === "activo" ? (
+                                                                <Button 
+                                                                    variant="ghost" 
+                                                                    size="icon"
+                                                                    title="Desactivar"
+                                                                    onClick={() => cambiarEstadoPersonal(p.id, "inactivo")}
+                                                                >
+                                                                    <EyeOff className="h-4 w-4" />
+                                                                </Button>
+                                                            ) : (
+                                                                <Button 
+                                                                    variant="ghost" 
+                                                                    size="icon"
+                                                                    title="Activar"
+                                                                    onClick={() => cambiarEstadoPersonal(p.id, "activo")}
+                                                                >
+                                                                    <Eye className="h-4 w-4" />
+                                                                </Button>
+                                                            )}
+                                                            
+                                                            <Button 
+                                                                variant="ghost" 
+                                                                size="icon"
+                                                                title="Eliminar (Mover a Papelera)"
+                                                                onClick={() => cambiarEstadoPersonal(p.id, "eliminado")}
+                                                            >
+                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                            </Button>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
                                         )}
-                                        {filteredPersonal.map((p) => (
-                                            <TableRow key={p.id}>
-                                                <TableCell className="font-medium whitespace-nowrap">{p.nombre}</TableCell>
-                                                <TableCell>
-                                                    <Badge variant={p.puesto === 'Chofer' ? 'default' : 'secondary'}>
-                                                        {p.puesto}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="whitespace-nowrap">{p.contacto || "N/A"}</TableCell>
-                                                <TableCell className="whitespace-nowrap">C${formatCurrency(p.salario)}</TableCell>
-                                                <TableCell className="whitespace-nowrap">{p.vehiculo?.nombre || "N/A"}</TableCell>
-                                                <TableCell className="whitespace-nowrap">
-                                                    {p.fechaContratacion ? new Date(p.fechaContratacion + "T00:00:00").toLocaleDateString('es-NI') : "N/A"}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <Link href={`/dashboard/propietario/personal/${p.id}`}>
-                                                            <Button variant="ghost" size="icon" title="Editar">
-                                                                <Pencil className="h-4 w-4" />
-                                                            </Button>
-                                                        </Link>
-                                                        
-                                                        {p.estado === "activo" ? (
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon"
-                                                                title="Desactivar"
-                                                                onClick={() => cambiarEstadoPersonal(p.id, "inactivo")}
-                                                            >
-                                                                <EyeOff className="h-4 w-4" />
-                                                            </Button>
-                                                        ) : (
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon"
-                                                                title="Activar"
-                                                                onClick={() => cambiarEstadoPersonal(p.id, "activo")}
-                                                            >
-                                                                <Eye className="h-4 w-4" />
-                                                            </Button>
-                                                        )}
-                                                        
-                                                        <Button 
-                                                            variant="ghost" 
-                                                            size="icon"
-                                                            title="Eliminar (Mover a Papelera)"
-                                                            onClick={() => cambiarEstadoPersonal(p.id, "eliminado")}
-                                                        >
-                                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                                        </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
                                     </TableBody>
                                 </Table>
                             </div>

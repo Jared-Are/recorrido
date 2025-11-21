@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase"; // Importar Supabase para autenticación
 
 // --- TIPO PARA EL VEHÍCULO CARGADO ---
 type Vehiculo = {
@@ -29,15 +30,17 @@ type Vehiculo = {
   nombre: string;
 };
 
-// --- DEFINICIÓN DEL TIPO ALUMNO (ACTUALIZADO) ---
+// --- DEFINICIÓN DEL TIPO ALUMNO (CORREGIDO) ---
 export type Alumno = {
   id: string;
   nombre: string;
-  tutor: string;
+  tutor: { // CORREGIDO: Tutor como objeto
+    nombre: string;
+    telefono: string;
+  };
   grado: string;
   precio: number;
-  contacto: string;
-  direccion: string;
+  direccion: string; // CORREGIDO: Dirección como campo separado
   activo: boolean;
   vehiculoId: string | null;
   vehiculo?: { 
@@ -114,7 +117,6 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-
 export default function EditarAlumnoPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -126,46 +128,91 @@ export default function EditarAlumnoPage() {
   
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   
-  const [formData, setFormData] = useState<Partial<Alumno>>({
+  // CORREGIDO: Estructura del formulario basada en la API
+  const [formData, setFormData] = useState({
     nombre: "",
-    tutor: "",
+    tutorNombre: "",
+    tutorTelefono: "",
     grado: "",
-    contacto: "",
     direccion: "",
     vehiculoId: "", 
     precio: 0,
   });
 
-  // --- OBTENER DATOS DEL ALUMNO Y VEHÍCULOS ---
+  // --- Función para obtener headers con autenticación ---
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    
+    if (!token) {
+      throw new Error("No hay sesión activa");
+    }
+
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  // --- OBTENER DATOS DEL ALUMNO Y VEHÍCULOS (CORREGIDO) ---
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      toast({
+        title: "Error",
+        description: "ID de alumno no válido",
+        variant: "destructive"
+      });
+      router.push("/dashboard/propietario/alumnos");
+      return;
+    }
 
     const fetchDatos = async () => {
       try {
+        setLoadingData(true);
+        
+        // Obtener headers de autenticación
+        const headers = await getAuthHeaders();
+
         const [alumnoRes, vehiculosRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`)
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, { headers }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers })
         ]);
 
         if (!alumnoRes.ok) {
-          throw new Error("No se pudo encontrar el alumno");
+          if (alumnoRes.status === 404) {
+            throw new Error("No se pudo encontrar el alumno");
+          } else if (alumnoRes.status === 401) {
+            throw new Error("No autorizado - por favor inicia sesión nuevamente");
+          } else {
+            throw new Error(`Error del servidor: ${alumnoRes.status}`);
+          }
         }
+
         if (!vehiculosRes.ok) {
-          throw new Error("No se pudieron cargar los vehículos");
+          console.warn("No se pudieron cargar los vehículos, pero continuamos...");
         }
-        
+
         const data: Alumno = await alumnoRes.json();
-        const dataVehiculos: Vehiculo[] = await vehiculosRes.json();
+        const dataVehiculos: Vehiculo[] = vehiculosRes.ok ? await vehiculosRes.json() : [];
 
         setVehiculos(dataVehiculos);
+        
+        // CORREGIDO: Mapear los datos correctamente
         setFormData({
-          ...data,
-          vehiculoId: data.vehiculoId || "" // Asignar "" si es nulo
+          nombre: data.nombre || "",
+          tutorNombre: data.tutor?.nombre || "",
+          tutorTelefono: data.tutor?.telefono || "",
+          grado: data.grado || "",
+          direccion: data.direccion || "",
+          vehiculoId: data.vehiculoId || "",
+          precio: data.precio || 0,
         });
+
       } catch (err: any) {
+        console.error("Error al cargar datos:", err);
         toast({
           title: "Error al cargar",
-          description: (err as Error).message,
+          description: err.message,
           variant: "destructive",
         });
         router.push("/dashboard/propietario/alumnos");
@@ -186,40 +233,67 @@ export default function EditarAlumnoPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
   
-  // --- ACTUALIZAR EN LA API ---
+  // --- ACTUALIZAR EN LA API (CORREGIDO) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // --- PAYLOAD LIMPIO Y ACTUALIZADO ---
+      // Validaciones
+      if (!formData.nombre.trim()) {
+        toast({ title: "Error de validación", description: "El nombre es obligatorio.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.tutorNombre.trim()) {
+        toast({ title: "Error de validación", description: "El nombre del tutor es obligatorio.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.tutorTelefono.trim()) {
+        toast({ title: "Error de validación", description: "El teléfono del tutor es obligatorio.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.direccion.trim()) {
+        toast({ title: "Error de validación", description: "La dirección es obligatoria.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.vehiculoId) {
+        toast({ title: "Error de validación", description: "Por favor, selecciona un vehículo.", variant: "destructive" });
+        setLoading(false);
+        return;
+      }
+
+      // CORREGIDO: Payload con estructura correcta
       const payload = {
-        nombre: formData.nombre,
-        tutor: formData.tutor,
+        nombre: formData.nombre.trim(),
+        tutor: { // Tutor como objeto
+          nombre: formData.tutorNombre.trim(),
+          telefono: formData.tutorTelefono.trim()
+        },
         grado: formData.grado,
-        contacto: formData.contacto,
-        direccion: formData.direccion,
+        direccion: formData.direccion.trim(), // Dirección como campo separado
         vehiculoId: formData.vehiculoId, 
         precio: Number(formData.precio),
       };
 
-      if (!payload.vehiculoId) {
-       toast({ title: "Error de validación", description: "Por favor, selecciona un vehículo.", variant: "destructive" });
-       setLoading(false);
-       return;
-      }
+      // Obtener headers con autenticación
+      const headers = await getAuthHeaders();
       
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(payload), 
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Error de la API:", errorData);
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || "No se pudo actualizar el alumno");
       }
 
@@ -227,12 +301,17 @@ export default function EditarAlumnoPage() {
         title: "¡Actualizado!",
         description: "El alumno se ha guardado correctamente.",
       });
-      router.push("/dashboard/propietario/alumnos");
+      
+      // Redirigir después de un breve delay
+      setTimeout(() => {
+        router.push("/dashboard/propietario/alumnos");
+      }, 1000);
 
     } catch (err: any) {
+      console.error("Error al guardar:", err);
       toast({
         title: "Error al guardar",
-        description: (err as Error).message,
+        description: err.message,
         variant: "destructive",
       });
     } finally {
@@ -245,12 +324,13 @@ export default function EditarAlumnoPage() {
       <DashboardLayout title="Editar Alumno" menuItems={menuItems}>
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="ml-2">Cargando datos del alumno...</span>
         </div>
       </DashboardLayout>
     );
   }
 
-  // --- RENDERIZADO DEL FORMULARIO DE EDICIÓN ---
+  // --- RENDERIZADO DEL FORMULARIO DE EDICIÓN (CORREGIDO) ---
   return (
     <DashboardLayout title="Editar Alumno" menuItems={menuItems}>
       <div className="space-y-6">
@@ -271,23 +351,51 @@ export default function EditarAlumnoPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre Completo *</Label>
-                  <Input id="nombre" name="nombre" value={formData.nombre || ''} onChange={handleChange} required />
+                  <Input 
+                    id="nombre" 
+                    name="nombre" 
+                    value={formData.nombre} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
 
+                {/* CORREGIDO: Campo separado para nombre del tutor */}
                 <div className="space-y-2">
-                  <Label htmlFor="tutor">Nombre del Tutor *</Label>
-                  <Input id="tutor" name="tutor" value={formData.tutor || ''} onChange={handleChange} required />
+                  <Label htmlFor="tutorNombre">Nombre del Tutor *</Label>
+                  <Input 
+                    id="tutorNombre" 
+                    name="tutorNombre" 
+                    value={formData.tutorNombre} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
                 
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="direccion">Dirección *</Label>
-                  <Input id="direccion" name="direccion" value={formData.direccion || ''} onChange={handleChange} required />
+                  <Input 
+                    id="direccion" 
+                    name="direccion" 
+                    value={formData.direccion} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="grado">Grado *</Label>
-                  <Select value={formData.grado || ''} onValueChange={(value) => handleSelectChange("grado", value)}>
-                    <SelectTrigger><SelectValue placeholder="Selecciona el grado" /></SelectTrigger>
+                  <Select 
+                    value={formData.grado} 
+                    onValueChange={(value) => handleSelectChange("grado", value)}
+                    disabled={loading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona el grado" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
                       <SelectItem value="2° Preescolar">2° Preescolar</SelectItem>
@@ -302,9 +410,18 @@ export default function EditarAlumnoPage() {
                   </Select>
                 </div>
 
+                {/* CORREGIDO: Campo separado para teléfono del tutor */}
                 <div className="space-y-2">
-                  <Label htmlFor="contacto">Teléfono de Contacto *</Label>
-                  <Input id="contacto" name="contacto" type="tel" value={formData.contacto || ''} onChange={handleChange} required />
+                  <Label htmlFor="tutorTelefono">Teléfono del Tutor *</Label>
+                  <Input 
+                    id="tutorTelefono" 
+                    name="tutorTelefono" 
+                    type="tel" 
+                    value={formData.tutorTelefono} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
               </div>
 
@@ -312,17 +429,15 @@ export default function EditarAlumnoPage() {
               <div className="space-y-2">
                 <Label>Asignar Vehículo *</Label>
                 <Select
-                  name="vehiculoId" 
-                  value={formData.vehiculoId || ''} 
+                  value={formData.vehiculoId} 
                   onValueChange={(value) => handleSelectChange("vehiculoId", value)} 
                   required
+                  disabled={loading}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona un vehículo" />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* --- ERROR ARREGLADO: LÍNEA ELIMINADA --- */}
-                    {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando vehículos...</SelectItem>} */}
                     {vehiculos.map(v => (
                       <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
                     ))}
@@ -332,7 +447,15 @@ export default function EditarAlumnoPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="precio">Precio Mensual (Individual)</Label>
-                <Input id="precio" name="precio" type="number" step="0.01" value={formData.precio ?? 0} onChange={handleChange} />
+                <Input 
+                  id="precio" 
+                  name="precio" 
+                  type="number" 
+                  step="0.01" 
+                  value={formData.precio} 
+                  onChange={handleChange} 
+                  disabled={loading}
+                />
                  <p className="text-xs text-muted-foreground">
                   Este es el precio individual del alumno (después de dividir entre hermanos si aplica).
                 </p>
@@ -340,11 +463,22 @@ export default function EditarAlumnoPage() {
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
-                  <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Cambios"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Guardar Cambios
+                    </>
+                  )}
                 </Button>
                 <Link href="/dashboard/propietario/alumnos">
-                  <Button type="button" variant="outline">Cancelar</Button>
+                  <Button type="button" variant="outline" disabled={loading}>
+                    Cancelar
+                  </Button>
                 </Link>
               </div>
             </form>

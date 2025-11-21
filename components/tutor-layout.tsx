@@ -3,9 +3,7 @@
 import type React from "react"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-// Importaciones de iconos corregidas para incluir Home y CalendarCheck
-import { LogOut, Sun, Moon, Users, DollarSign, Loader2, Home, Bell, CalendarCheck } 
-from "lucide-react"
+import { LogOut, Sun, Moon, Users, BarChart2, DollarSign, Loader2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
@@ -31,7 +29,7 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
     }
   }, [])
 
-  // --- Tema persistente (Tu código original) ---
+  // --- Tema persistente ---
   useEffect(() => {
     const theme = localStorage.getItem("app-theme")
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -97,12 +95,12 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     localStorage.removeItem("rememberedUser")
-    window.location.href = "/" // Redirigir a la raíz (Login)
+    window.location.href = "/"
   }
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-background text-foreground">
         <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
       </div>
     )
@@ -111,18 +109,17 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
   // Si no hay usuario, ya fue redirigido por el useEffect
   if (!user) return null
 
-  // NOTA: Usamos CalendarCheck en lugar de BarChart2 que tenías antes
+  // --- NAVEGACIÓN ORIGINAL ---
   const navItems = [
-    { title: "Resumen", icon: Home, href: "/dashboard/tutor" },
-    { title: "Asistencia", icon: CalendarCheck, href: "/dashboard/tutor/asistencia" },
+    { title: "Resumen", icon: Users, href: "/dashboard/tutor" },
+    { title: "Asistencias", icon: BarChart2, href: "/dashboard/tutor/asistencias" },
     { title: "Pagos", icon: DollarSign, href: "/dashboard/tutor/pagos" },
-    { title: "Avisos", icon: Bell, href: "/dashboard/tutor/avisos" },
   ]
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* Header Superior */}
-      <header className="bg-card border-b border-border sticky top-0 z-40 shadow-sm">
+      {/* Header Superior (ESTILO ORIGINAL) */}
+      <header className="bg-card border-b border-border sticky top-0 z-40">
         <div className="flex items-center justify-between px-4 py-3 md:px-6">
           <div>
             <h1 className="text-lg font-bold text-foreground">{title}</h1>
@@ -143,15 +140,15 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
       {/* Contenido Principal */}
       <main className="flex-1 p-4 md:p-6 pb-20">{children}</main>
 
-      {/* Barra de Navegación Inferior (Tu diseño original) */}
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center shadow-lg">
+      {/* Barra de Navegación Inferior (ESTILO ORIGINAL) */}
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center">
         {navItems.map((item) => {
           const isActive = pathname === item.href
           return (
             <Link key={item.title} href={item.href}>
               <div
                 className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg ${
-                  isActive ? "text-primary bg-muted" : "text-muted-foreground"
+                  isActive ? "text-primary" : "text-muted-foreground"
                 }`}
               >
                 <item.icon className="h-6 w-6" />

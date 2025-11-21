@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // Importamos Supabase
+import { supabase } from "@/lib/supabase";
 
 // --- DEFINICIÓN DEL MENÚ ---
 const menuItems: MenuItem[] = [
@@ -63,16 +63,16 @@ export default function NuevoAlumnoPage() {
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     
-    // --- NUEVO ESTADO PARA LOS VEHÍCULOS ---
     const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-    const [vehiculosLoading, setVehiculosLoading] = useState(true); // Nuevo estado de carga
+    const [vehiculosLoading, setVehiculosLoading] = useState(true);
 
+    // CORREGIDO: Estructura basada en los errores de la API
     const [formData, setFormData] = useState({
         nombre: "",
-        tutor: "",
+        tutorNombre: "",
+        tutorTelefono: "", // Campo separado para teléfono del tutor
         grado: "",
-        contacto: "",
-        direccion: "",
+        direccion: "", // Dirección como campo separado
         vehiculoId: "", 
         precio: "", 
         hermanos: false,
@@ -82,7 +82,7 @@ export default function NuevoAlumnoPage() {
         { nombre: string; grado: string; vehiculoId: string }[] 
     >([]);
 
-    // --- CARGAR VEHÍCULOS AL INICIAR (CORRECCIÓN DE SEGURIDAD Y ERROR) ---
+    // --- CARGAR VEHÍCULOS AL INICIAR ---
     useEffect(() => {
         const fetchVehiculos = async () => {
             setVehiculosLoading(true);
@@ -98,12 +98,10 @@ export default function NuevoAlumnoPage() {
                 
                 const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers });
                 
-                // --- MANEJO DE ERROR CRÍTICO (404/204 -> [] vacío) ---
                 if (!response.ok) {
                     if (response.status === 404 || response.status === 204) {
-                        setVehiculos([]); // No hay vehículos, es un estado válido
+                        setVehiculos([]);
                     } else {
-                        // Si es otro error (ej. 500), lanzamos para que se loguee en consola
                         const errorData = await response.json().catch(() => ({}));
                         throw new Error(errorData.message || `Error del servidor (${response.status})`);
                     }
@@ -113,7 +111,6 @@ export default function NuevoAlumnoPage() {
                 }
 
             } catch (err: any) {
-                // SOLO mostramos el error en la consola, no al usuario, ya que no bloquea el formulario
                 console.error("Error al cargar vehículos:", err);
             } finally {
                 setVehiculosLoading(false);
@@ -121,7 +118,6 @@ export default function NuevoAlumnoPage() {
         };
         fetchVehiculos();
     }, [toast]);
-
 
     const agregarHijo = () => {
         setOtrosHijos([...otrosHijos, { nombre: "", grado: "", vehiculoId: "" }]); 
@@ -143,7 +139,7 @@ export default function NuevoAlumnoPage() {
         setOtrosHijos(nuevos);
     };
 
-    // --- GUARDAR EN LA API ---
+    // --- GUARDAR EN LA API (CORREGIDO) ---
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -173,14 +169,32 @@ export default function NuevoAlumnoPage() {
         }
         const precioIndividual = precioFamiliar / numeroDeHijos;
         
-        // Validar que se seleccionó vehículo para todos (y que el ID no sea el placeholder)
-        const vehiculoInvalido = alumnosAInscribir.some(a => !a.vehiculoId || a.vehiculoId.length < 5 || a.vehiculoId === "placeholder-value");
+        // Validar que se seleccionó vehículo para todos
+        const vehiculoInvalido = alumnosAInscribir.some(a => !a.vehiculoId || a.vehiculoId === "placeholder-value");
         if (vehiculoInvalido) {
              toast({ title: "Error", description: "Por favor, asigna un vehículo a cada alumno.", variant: "destructive" });
              setLoading(false);
              return;
         }
 
+        // Validaciones basadas en los errores de la API
+        if (!formData.tutorNombre.trim()) {
+            toast({ title: "Error", description: "El nombre del tutor es obligatorio.", variant: "destructive" });
+            setLoading(false);
+            return;
+        }
+
+        if (!formData.tutorTelefono.trim()) {
+            toast({ title: "Error", description: "El teléfono del tutor es obligatorio.", variant: "destructive" });
+            setLoading(false);
+            return;
+        }
+
+        if (!formData.direccion.trim()) {
+            toast({ title: "Error", description: "La dirección es obligatoria.", variant: "destructive" });
+            setLoading(false);
+            return;
+        }
 
         try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -188,23 +202,27 @@ export default function NuevoAlumnoPage() {
             if (!token) throw new Error("Sesión no válida.");
 
             const headers = { 
-                'Authorization': `Bearer ${token}`, // Enviamos el token de seguridad
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             };
 
-
             const promesasDeCreacion = alumnosAInscribir.map((alumno) => {
                 
+                // CORREGIDO: Estructura basada en los errores de la API
                 const payload = {
-                    nombre: alumno.nombre,
+                    nombre: alumno.nombre.trim(),
                     grado: alumno.grado,
-                    tutor: formData.tutor,
-                    contacto: formData.contacto,
-                    direccion: formData.direccion,
+                    tutor: { // Solo las propiedades que la API espera
+                        nombre: formData.tutorNombre.trim(),
+                        telefono: formData.tutorTelefono.trim()
+                    },
+                    direccion: formData.direccion.trim(), // Dirección como campo separado
                     vehiculoId: alumno.vehiculoId,
                     precio: precioIndividual, 
                     activo: true, 
                 };
+
+                console.log("Enviando payload:", payload); // Para debugging
 
                 return fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, {
                     method: 'POST',
@@ -217,12 +235,17 @@ export default function NuevoAlumnoPage() {
 
             const respuestasFallidas = responses.filter((res) => !res.ok);
             if (respuestasFallidas.length > 0) {
-                const errorText = await respuestasFallidas[0].text();
-                // Intentamos parsear el mensaje de error del backend
-                let errorMessage = `Error al registrar a uno o más alumnos.`;
+                const firstFailed = respuestasFallidas[0];
+                let errorMessage = `Error al registrar a uno o más alumnos (${firstFailed.status}).`;
+                
                 try {
-                    const errorJson = JSON.parse(errorText);
-                    errorMessage = errorJson.message || errorJson.error || errorMessage;
+                    const errorData = await firstFailed.json();
+                    errorMessage = errorData.message || errorData.error || errorMessage;
+                    
+                    // Si hay errores de validación específicos, mostrarlos
+                    if (errorData.details && Array.isArray(errorData.details)) {
+                        errorMessage += `: ${errorData.details.join(', ')}`;
+                    }
                 } catch {}
 
                 throw new Error(errorMessage);
@@ -239,7 +262,7 @@ export default function NuevoAlumnoPage() {
             console.error("Error en handleSubmit:", err);
             toast({
                 title: "Error en el registro",
-                description: err.message.substring(0, 100) || "No se pudieron guardar los datos.",
+                description: err.message || "No se pudieron guardar los datos.",
                 variant: "destructive",
             });
         } finally {
@@ -272,23 +295,57 @@ export default function NuevoAlumnoPage() {
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="nombre">Nombre Completo * (Hijo 1)</Label>
-                                    <Input id="nombre" placeholder="Ej: Juan Pérez López" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} required />
+                                    <Input 
+                                        id="nombre" 
+                                        placeholder="Ej: Juan Pérez López" 
+                                        value={formData.nombre} 
+                                        onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} 
+                                        required 
+                                    />
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="tutor">Nombre del Tutor *</Label>
-                                    <Input id="tutor" placeholder="Ej: María Pérez" value={formData.tutor} onChange={(e) => setFormData({ ...formData, tutor: e.target.value })} required />
+                                    <Label htmlFor="tutorNombre">Nombre del Tutor *</Label>
+                                    <Input 
+                                        id="tutorNombre" 
+                                        placeholder="Ej: María Pérez" 
+                                        value={formData.tutorNombre} 
+                                        onChange={(e) => setFormData({ ...formData, tutorNombre: e.target.value })} 
+                                        required 
+                                    />
                                 </div>
                                 
-                                <div className="space-y-2 md:col-span-2">
+                                {/* CORREGIDO: Campo de teléfono separado para el tutor */}
+                                <div className="space-y-2">
+                                    <Label htmlFor="tutorTelefono">Teléfono del Tutor *</Label>
+                                    <Input 
+                                        id="tutorTelefono" 
+                                        type="tel" 
+                                        placeholder="Ej: 555-0123" 
+                                        value={formData.tutorTelefono} 
+                                        onChange={(e) => setFormData({ ...formData, tutorTelefono: e.target.value })} 
+                                        required 
+                                    />
+                                </div>
+
+                                {/* CORREGIDO: Dirección como campo separado */}
+                                <div className="space-y-2">
                                     <Label htmlFor="direccion">Dirección *</Label>
-                                    <Input id="direccion" placeholder="Ej: Calle Ficticia 123, Zona A" value={formData.direccion} onChange={(e) => setFormData({ ...formData, direccion: e.target.value })} required />
+                                    <Input 
+                                        id="direccion" 
+                                        placeholder="Ej: Calle Ficticia 123, Zona A" 
+                                        value={formData.direccion} 
+                                        onChange={(e) => setFormData({ ...formData, direccion: e.target.value })} 
+                                        required 
+                                    />
                                 </div>
 
                                 <div className="space-y-2">
                                     <Label htmlFor="grado">Grado * (Hijo 1)</Label>
                                     <Select value={formData.grado} onValueChange={(value) => setFormData({ ...formData, grado: value })}>
-                                        <SelectTrigger><SelectValue placeholder="Selecciona el grado" /></SelectTrigger>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Selecciona el grado" />
+                                        </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
                                             <SelectItem value="2° Preescolar">2° Preescolar</SelectItem>
@@ -301,11 +358,6 @@ export default function NuevoAlumnoPage() {
                                             <SelectItem value="6° Primaria">6° Primaria</SelectItem>
                                         </SelectContent>
                                     </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="contacto">Teléfono de Contacto *</Label>
-                                    <Input id="contacto" type="tel" placeholder="Ej: 555-0123" value={formData.contacto} onChange={(e) => setFormData({ ...formData, contacto: e.target.value })} required />
                                 </div>
                             </div>
 
@@ -321,7 +373,6 @@ export default function NuevoAlumnoPage() {
                                         <SelectValue placeholder={vehiculosLoading ? "Cargando vehículos..." : "Selecciona un vehículo"} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {/* CORRECCIÓN 1: Usar un valor no vacío para el placeholder */}
                                         <SelectItem value="placeholder-value" disabled>
                                             {vehiculos.length === 0 ? "No hay vehículos activos" : "Selecciona un vehículo"}
                                         </SelectItem>
@@ -334,7 +385,14 @@ export default function NuevoAlumnoPage() {
 
                             <div className="space-y-2">
                                 <Label htmlFor="precio">Precio Mensual (Total por Familia) *</Label>
-                                <Input id="precio" type="number" placeholder="Ej: 1500" value={formData.precio} onChange={(e) => setFormData({ ...formData, precio: e.target.value })} required />
+                                <Input 
+                                    id="precio" 
+                                    type="number" 
+                                    placeholder="Ej: 1500" 
+                                    value={formData.precio} 
+                                    onChange={(e) => setFormData({ ...formData, precio: e.target.value })} 
+                                    required 
+                                />
                                 <p className="text-xs text-muted-foreground">
                                     Este precio se dividirá automáticamente entre todos los hijos registrados.
                                 </p>
@@ -346,7 +404,6 @@ export default function NuevoAlumnoPage() {
                                     checked={formData.hermanos}
                                     onCheckedChange={(checked) => {
                                         setFormData({ ...formData, hermanos: checked === true });
-                                        // Aseguramos que el primer hermano también tenga un placeholder de vehículo
                                         if (checked) setOtrosHijos([{ nombre: "", grado: "", vehiculoId: "" }]); 
                                         else setOtrosHijos([]);
                                     }}
@@ -363,13 +420,19 @@ export default function NuevoAlumnoPage() {
                                         <div key={index} className="grid gap-2 md:grid-cols-4 items-end">
                                             <div className="space-y-2">
                                                 <Label>Nombre del hijo {index + 2}</Label>
-                                                <Input placeholder={`Ej: Pedro Pérez`} value={hijo.nombre} onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} />
+                                                <Input 
+                                                    placeholder={`Ej: Pedro Pérez`} 
+                                                    value={hijo.nombre} 
+                                                    onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} 
+                                                />
                                             </div>
                                             
                                             <div className="space-y-2">
                                                 <Label>Grado (Hijo {index + 2})</Label>
                                                 <Select value={hijo.grado} onValueChange={(value) => handleChangeHijo(index, "grado", value)}>
-                                                    <SelectTrigger><SelectValue placeholder="Selecciona el grado" /></SelectTrigger>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Selecciona el grado" />
+                                                    </SelectTrigger>
                                                     <SelectContent>
                                                         <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
                                                         <SelectItem value="2° Preescolar">2° Preescolar</SelectItem>
@@ -384,7 +447,6 @@ export default function NuevoAlumnoPage() {
                                                 </Select>
                                             </div>
                                             
-                                            {/* --- SELECTOR DE VEHÍCULO (HERMANOS) --- */}
                                             <div className="space-y-2">
                                                 <Label>Vehículo (Hijo {index + 2})</Label>
                                                 <Select 
@@ -392,10 +454,9 @@ export default function NuevoAlumnoPage() {
                                                     onValueChange={(value) => handleChangeHijo(index, "vehiculoId", value)}
                                                 >
                                                     <SelectTrigger>
-                                                         <SelectValue placeholder={vehiculosLoading ? "Cargando..." : "Selecciona un vehículo"} />
+                                                        <SelectValue placeholder={vehiculosLoading ? "Cargando..." : "Selecciona un vehículo"} />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                         {/* CORRECCIÓN 2: Usar un valor no vacío para el placeholder */}
                                                         <SelectItem value="placeholder-value" disabled>
                                                             {vehiculos.length === 0 ? "No hay vehículos activos" : "Selecciona un vehículo"}
                                                         </SelectItem>
@@ -421,8 +482,17 @@ export default function NuevoAlumnoPage() {
                             {/* --- BOTONES DE GUARDADO --- */}
                             <div className="flex gap-3 pt-4">
                                 <Button type="submit" disabled={loading}>
-                                    <Save className="h-4 w-4 mr-2" />
-                                    {loading ? "Guardando..." : "Guardar Alumno(s)"}
+                                    {loading ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            Guardando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="h-4 w-4 mr-2" />
+                                            Guardar Alumno(s)
+                                        </>
+                                    )}
                                 </Button>
                                 <Link href="/dashboard/propietario/alumnos">
                                     <Button type="button" variant="outline">Cancelar</Button>

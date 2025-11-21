@@ -23,12 +23,19 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase"; // Importar Supabase para autenticación
 
-// --- CORRECCIÓN 1: Ruta de importación ---
-// Cambiado de ../../page a ../page
-import type { Aviso } from "../page"; 
+// --- DEFINICIÓN LOCAL DEL TIPO AVISO (Por si falla la importación) ---
+type Aviso = {
+  id: string;
+  titulo: string;
+  contenido: string;
+  destinatario: 'todos' | 'tutores' | 'personal';
+  fecha: string;
+  estado?: string;
+};
 
-// --- Menú (El mismo de siempre) ---
+// --- Menú ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -50,19 +57,64 @@ export default function EditarAvisoPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [formData, setFormData] = useState<Partial<Aviso>>({});
 
-  // --- Cargar datos del aviso a editar ---
+  // --- Función para obtener headers con autenticación ---
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    
+    if (!token) {
+      throw new Error("No hay sesión activa");
+    }
+
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  // --- Cargar datos del aviso a editar (CORREGIDO) ---
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      toast({
+        title: "Error",
+        description: "ID de aviso no válido",
+        variant: "destructive"
+      });
+      router.push("/dashboard/propietario/avisos");
+      return;
+    }
+
     const fetchAviso = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`);
+        setLoadingData(true);
+        
+        // Obtener headers con autenticación
+        const headers = await getAuthHeaders();
+        
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`, {
+          headers
+        });
+
         if (!response.ok) {
-          throw new Error("No se pudo encontrar el aviso");
+          if (response.status === 404) {
+            throw new Error("No se pudo encontrar el aviso");
+          } else if (response.status === 401) {
+            throw new Error("No autorizado - por favor inicia sesión nuevamente");
+          } else {
+            throw new Error(`Error del servidor: ${response.status}`);
+          }
         }
+
         const data: Aviso = await response.json();
         setFormData(data);
+        
       } catch (err: any) {
-        toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
+        console.error("Error al cargar aviso:", err);
+        toast({ 
+          title: "Error al cargar", 
+          description: err.message, 
+          variant: "destructive" 
+        });
         router.push("/dashboard/propietario/avisos");
       } finally {
         setLoadingData(false);
@@ -74,42 +126,87 @@ export default function EditarAvisoPage() {
   // --- Manejadores de formulario ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    // --- CORRECCIÓN 2: Tipar 'prev' ---
-    setFormData((prev: Partial<Aviso>) => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSelectChange = (value: string) => {
-    // --- CORRECCIÓN 3: Tipar 'prev' ---
-    setFormData((prev: Partial<Aviso>) => ({ ...prev, destinatario: value as Aviso['destinatario'] }));
+    setFormData(prev => ({ ...prev, destinatario: value as Aviso['destinatario'] }));
   };
 
-  // --- Enviar actualización a la API ---
+  // --- Enviar actualización a la API (CORREGIDO) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const payload = {
-      titulo: formData.titulo,
-      contenido: formData.contenido,
-      destinatario: formData.destinatario,
-    };
-
     try {
+      // Validaciones
+      if (!formData.titulo?.trim()) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El título es obligatorio", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.contenido?.trim()) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El contenido es obligatorio", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.destinatario) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El destinatario es obligatorio", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        titulo: formData.titulo.trim(),
+        contenido: formData.contenido.trim(),
+        destinatario: formData.destinatario,
+      };
+
+      // Obtener headers con autenticación
+      const headers = await getAuthHeaders();
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo actualizar el aviso");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "No se pudo actualizar el aviso");
       }
 
-      toast({ title: "¡Actualizado!", description: "El aviso se ha guardado correctamente." });
-      router.push("/dashboard/propietario/avisos");
+      toast({ 
+        title: "¡Actualizado!", 
+        description: "El aviso se ha guardado correctamente." 
+      });
+      
+      // Redirigir después de un breve delay
+      setTimeout(() => {
+        router.push("/dashboard/propietario/avisos");
+      }, 1000);
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
+      console.error("Error al guardar:", err);
+      toast({ 
+        title: "Error al guardar", 
+        description: err.message, 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
@@ -118,7 +215,10 @@ export default function EditarAvisoPage() {
   if (loadingData) {
     return (
       <DashboardLayout title="Editar Aviso" menuItems={menuItems}>
-        <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="ml-2">Cargando aviso...</span>
+        </div>
       </DashboardLayout>
     );
   }
@@ -151,18 +251,21 @@ export default function EditarAvisoPage() {
                     value={formData.titulo || ''} 
                     onChange={handleChange} 
                     required 
+                    disabled={loading}
                   />
                 </div>
                 
                 <div className="space-y-2">
                   <Label htmlFor="destinatario">Destinatario *</Label>
                   <Select 
-                    name="destinatario" 
                     value={formData.destinatario || 'todos'} 
                     onValueChange={handleSelectChange}
                     required
+                    disabled={loading}
                   >
-                    <SelectTrigger><SelectValue placeholder="Selecciona a quién enviar" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona a quién enviar" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
                       <SelectItem value="tutores">Solo Tutores</SelectItem>
@@ -182,16 +285,28 @@ export default function EditarAvisoPage() {
                   onChange={handleChange} 
                   required 
                   rows={6}
+                  disabled={loading}
                 />
               </div>
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
-                  <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Cambios"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Guardar Cambios
+                    </>
+                  )}
                 </Button>
                 <Link href="/dashboard/propietario/avisos">
-                  <Button type="button" variant="outline">Cancelar</Button>
+                  <Button type="button" variant="outline" disabled={loading}>
+                    Cancelar
+                  </Button>
                 </Link>
               </div>
             </form>

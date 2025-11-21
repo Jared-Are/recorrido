@@ -43,6 +43,7 @@ export default function RegistrarAsistenciaPage() {
         // OBTENER TOKEN
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
+        if (!token) throw new Error("Sesión no válida o expirada.");
 
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/alumnos-del-dia`, {
             headers: {
@@ -61,7 +62,7 @@ export default function RegistrarAsistenciaPage() {
 
       } catch (err: any) {
         toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
-        router.push("/dashboard/asistente"); 
+        // router.push("/dashboard/asistente"); // Comentar o cambiar a un aviso si quieres mantener el flujo
       } finally {
         setLoading(false);
       }
@@ -89,7 +90,7 @@ export default function RegistrarAsistenciaPage() {
     setIsConfirmOpen(true);
   };
 
-  // 5. Enviar datos al backend
+  // 5. Enviar datos al backend (CORREGIDO)
   const handleConfirmGuardar = async () => {
     setIsConfirmOpen(false);
     setSending(true);
@@ -106,11 +107,12 @@ export default function RegistrarAsistenciaPage() {
       // OBTENER TOKEN PARA EL ENVÍO
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-
+      if (!token) throw new Error("Sesión no válida."); // <-- Validación de Token
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/registrar-lote`, {
         method: 'POST',
         headers: { 
-            'Authorization': `Bearer ${token}`, // <--- AQUÍ TAMBIÉN
+            'Authorization': `Bearer ${token}`, // <--- ¡AQUÍ ESTABA EL FALLO!
             'Content-Type': 'application/json' 
         },
         body: JSON.stringify(payload)
@@ -118,7 +120,7 @@ export default function RegistrarAsistenciaPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.message.toString() || "No se pudo guardar la asistencia.");
+        throw new Error(errorData?.message.toString() || `No se pudo guardar la asistencia. Código: ${response.status}`);
       }
 
       const presentes = alumnos.length - ausentes.length;

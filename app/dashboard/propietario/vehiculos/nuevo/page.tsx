@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from '@supabase/supabase-js'; // <-- 1. Importar Cliente Supabase
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,20 +18,15 @@ import {
     BarChart3, 
     TrendingDown,
     Loader2,
-    Upload, // <-- Iconos nuevos para la foto
+    Upload,
     Image as ImageIcon,
     X
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 
-// --- 2. Inicializar Cliente Supabase ---
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// --- Menú (El mismo de siempre) ---
+// --- Menú ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -49,8 +43,6 @@ export default function NuevoVehiculoPage() {
   const { toast } = useToast();
   
   const [loading, setLoading] = useState(false);
-  
-  // --- 3. Estados para la imagen ---
   const [uploading, setUploading] = useState(false);
   const [fotoUrl, setFotoUrl] = useState("");
 
@@ -61,6 +53,7 @@ export default function NuevoVehiculoPage() {
     modelo: "",
     anio: "",
     capacidad: "",
+    estado: "activo" // <-- AGREGAR ESTADO POR DEFECTO
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,15 +61,34 @@ export default function NuevoVehiculoPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- 4. Lógica de Subida de Imagen ---
+  // --- Lógica de Subida de Imagen ---
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0) return;
       
       setUploading(true);
       const file = e.target.files[0];
-      
-      // Generar nombre único para evitar colisiones
+
+      // Validaciones
+      if (!file.type.startsWith('image/')) {
+        toast({ 
+          title: "Error", 
+          description: "Solo se permiten archivos de imagen", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        toast({ 
+          title: "Error", 
+          description: "La imagen no puede ser mayor a 5MB", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Generar nombre único
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `${fileName}`;
@@ -88,15 +100,22 @@ export default function NuevoVehiculoPage() {
 
       if (uploadError) throw uploadError;
 
-      // Obtener la URL pública para guardarla en la BD
+      // Obtener la URL pública
       const { data } = supabase.storage.from('vehiculos').getPublicUrl(filePath);
       
       setFotoUrl(data.publicUrl);
-      toast({ title: "Imagen cargada", description: "La foto se subió correctamente." });
+      toast({ 
+        title: "Imagen cargada", 
+        description: "La foto se subió correctamente." 
+      });
 
     } catch (error: any) {
-      console.error(error);
-      toast({ title: "Error al subir imagen", description: error.message, variant: "destructive" });
+      console.error("Error subiendo imagen:", error);
+      toast({ 
+        title: "Error al subir imagen", 
+        description: error.message, 
+        variant: "destructive" 
+      });
     } finally {
       setUploading(false);
     }
@@ -106,34 +125,82 @@ export default function NuevoVehiculoPage() {
     setFotoUrl("");
   };
 
-  // --- Enviar Vehículo a la API ---
+  // --- Enviar Vehículo a la API CON AUTENTICACIÓN ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const payload = {
-      ...formData,
-      anio: parseInt(formData.anio) || undefined,
-      capacidad: parseInt(formData.capacidad) || undefined,
-      fotoUrl: fotoUrl, // <-- 5. Incluir la URL de la foto
-    };
-
     try {
+      // Obtener token de sesión
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ 
+          title: "Error", 
+          description: "No hay sesión activa", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      const token = session.access_token;
+
+      // Validaciones básicas
+      if (!formData.nombre.trim() || !formData.placa.trim()) {
+        toast({ 
+          title: "Error", 
+          description: "Nombre y placa son campos obligatorios", 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Preparar payload con todos los campos requeridos
+      const payload = {
+        nombre: formData.nombre.trim(),
+        placa: formData.placa.trim().toUpperCase(),
+        marca: formData.marca.trim() || undefined,
+        modelo: formData.modelo.trim() || undefined,
+        anio: formData.anio ? parseInt(formData.anio) : undefined,
+        capacidad: formData.capacidad ? parseInt(formData.capacidad) : undefined,
+        estado: formData.estado, // <-- INCLUIR ESTADO
+        fotoUrl: fotoUrl || undefined,
+      };
+
+      console.log("Enviando payload:", payload);
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo registrar el vehículo");
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Error del servidor:", errorData);
+        throw new Error(errorData.message || `Error del servidor: ${response.status}`);
       }
 
-      toast({ title: "¡Vehículo Registrado!", description: "El vehículo se ha guardado correctamente." });
+      const result = await response.json();
+      console.log("Respuesta del servidor:", result);
+
+      toast({ 
+        title: "¡Vehículo Registrado!", 
+        description: "El vehículo se ha guardado correctamente." 
+      });
+      
       router.push("/dashboard/propietario/vehiculos");
+      router.refresh();
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: (err as Error).message, variant: "destructive" });
+      console.error("Error completo:", err);
+      toast({ 
+        title: "Error al guardar", 
+        description: err.message, 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
@@ -157,7 +224,7 @@ export default function NuevoVehiculoPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               
-              {/* --- 6. UI DE SUBIDA DE FOTO --- */}
+              {/* UI DE SUBIDA DE FOTO */}
               <div className="space-y-2">
                   <Label>Fotografía de la Unidad</Label>
                   <div className="flex items-start gap-6 border p-4 rounded-lg bg-gray-50 dark:bg-gray-900/20">
@@ -218,6 +285,7 @@ export default function NuevoVehiculoPage() {
                     value={formData.nombre} 
                     onChange={handleChange} 
                     required 
+                    disabled={loading}
                   />
                 </div>
                  <div className="space-y-2">
@@ -229,6 +297,7 @@ export default function NuevoVehiculoPage() {
                     value={formData.placa} 
                     onChange={handleChange} 
                     required 
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -242,6 +311,7 @@ export default function NuevoVehiculoPage() {
                     placeholder="Ej: Toyota" 
                     value={formData.marca} 
                     onChange={handleChange} 
+                    disabled={loading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -252,6 +322,7 @@ export default function NuevoVehiculoPage() {
                     placeholder="Ej: Hiace" 
                     value={formData.modelo} 
                     onChange={handleChange} 
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -266,6 +337,7 @@ export default function NuevoVehiculoPage() {
                     placeholder="Ej: 2018"
                     value={formData.anio} 
                     onChange={handleChange} 
+                    disabled={loading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -277,9 +349,17 @@ export default function NuevoVehiculoPage() {
                     placeholder="Ej: 15"
                     value={formData.capacidad} 
                     onChange={handleChange} 
+                    disabled={loading}
                   />
                 </div>
               </div>
+
+              {/* Campo estado oculto pero incluido en el formData */}
+              <input 
+                type="hidden" 
+                name="estado" 
+                value={formData.estado} 
+              />
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading || uploading}>
@@ -291,7 +371,9 @@ export default function NuevoVehiculoPage() {
                   {loading ? "Guardando..." : "Guardar Vehículo"}
                 </Button>
                 <Link href="/dashboard/propietario/vehiculos">
-                    <Button type="button" variant="outline">Cancelar</Button>
+                    <Button type="button" variant="outline" disabled={loading}>
+                      Cancelar
+                    </Button>
                 </Link>
               </div>
             </form>

@@ -28,14 +28,14 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabase" // <--- Importamos Supabase
+import { supabase } from "@/lib/supabase"
 
 // --- DEFINICIÓN DE TIPOS ---
 export type Pago = {
     id: string;
     alumnoId: string;
     alumnoNombre: string; 
-    monto: number; // Forzaremos la conversión por si llega como string
+    monto: number;
     mes: string;
     fecha: string; 
     estado: "pagado" | "pendiente";
@@ -46,23 +46,77 @@ export type Alumno = {
     nombre: string;
     tutor: string;
     grado: string;
-    precio?: number; // Forzaremos la conversión por si llega como string
+    precio?: number;
     activo: boolean; 
 };
 
-
-// --- DEFINICIÓN DEL MENÚ COMPLETO (omitted for brevity) ---
+// --- DEFINICIÓN DEL MENÚ COMPLETO ---
 const menuItems: MenuItem[] = [
-    { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
-    { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
-    { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
-    { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
-    { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
-    { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
-    { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
-    { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
+    {
+        title: "Gestionar Alumnos",
+        description: "Ver y administrar estudiantes",
+        icon: Users,
+        href: "/dashboard/propietario/alumnos",
+        color: "text-blue-600",
+        bgColor: "bg-blue-50 dark:bg-blue-900/20",
+    },
+    {
+        title: "Gestionar Pagos",
+        description: "Ver historial y registrar pagos",
+        icon: DollarSign,
+        href: "/dashboard/propietario/pagos",
+        color: "text-green-600",
+        bgColor: "bg-green-50 dark:bg-green-900/20",
+    },
+    {
+        title: "Gestionar Gastos",
+        description: "Control de combustible, salarios, etc.",
+        icon: TrendingDown,
+        href: "/dashboard/propietario/gastos",
+        color: "text-pink-600",
+        bgColor: "bg-pink-50 dark:bg-pink-900/20",
+    },
+    {
+        title: "Gestionar Personal",
+        description: "Administrar empleados y choferes",
+        icon: Users,
+        href: "/dashboard/propietario/personal",
+        color: "text-purple-600",
+        bgColor: "bg-purple-50 dark:bg-purple-900/20",
+    },
+    {
+        title: "Gestionar Vehículos",
+        description: "Administrar flota de vehículos",
+        icon: Bus,
+        href: "/dashboard/propietario/vehiculos",
+        color: "text-orange-600",
+        bgColor: "bg-orange-50 dark:bg-orange-900/20",
+    },
+    {
+        title: "Gestionar Usuarios",
+        description: "Administrar accesos al sistema",
+        icon: UserCog,
+        href: "/dashboard/propietario/usuarios",
+        color: "text-indigo-600",
+        bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
+    },
+    {
+        title: "Enviar Avisos",
+        description: "Comunicados a tutores y personal",
+        icon: Bell,
+        href: "/dashboard/propietario/avisos",
+        color: "text-yellow-600",
+        bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
+    },
+    {
+        title: "Generar Reportes",
+        description: "Estadísticas y análisis",
+        icon: BarChart3,
+        href: "/dashboard/propietario/reportes",
+        color: "text-red-600",
+        bgColor: "bg-red-50 dark:bg-red-900/20",
+    },
 ];
-
 
 // --- CONSTANTES PARA LA VISTA DE CUADERNO ---
 const ANIO_ESCOLAR = new Date().getFullYear().toString(); 
@@ -85,7 +139,6 @@ const formatCurrency = (num: number) => {
     return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-
 export default function PagosPage() {
     const [pagos, setPagos] = useState<Pago[]>([]) 
     const [alumnos, setAlumnos] = useState<Alumno[]>([]) 
@@ -94,9 +147,7 @@ export default function PagosPage() {
     const { toast } = useToast()
     
     const [searchTerm, setSearchTerm] = useState("")
-    
     const [cardMonthFilter, setCardMonthFilter] = useState("Todos");
-    
     const [viewMode, setViewMode] = useState<'lista' | 'cuaderno'>('lista');
 
     // --- OBTENER DATOS DE LA API ---
@@ -268,7 +319,6 @@ export default function PagosPage() {
 
     }, [alumnos, pagos, searchTerm]); 
 
-
     // --- CÁLCULOS (MODIFICADOS PARA FILTRO DE TARJETAS) ---
     const pagosParaTarjetas = useMemo(() => {
         if (cardMonthFilter === "Todos") {
@@ -323,7 +373,6 @@ export default function PagosPage() {
             return;
         }
         try {
-            // OBTENER TOKEN
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
             if (!token) throw new Error("Sesión no válida.");
@@ -335,7 +384,7 @@ export default function PagosPage() {
             if (!response.ok) {
                 throw new Error("No se pudo eliminar el pago.");
             }
-            fetchDatos(); // Recargar datos para reflejar el cambio
+            setPagos(prev => prev.filter((p) => p.id !== id));
             toast({
                 title: "Pago Eliminado",
                 description: "El registro del pago ha sido eliminado.",
@@ -353,18 +402,20 @@ export default function PagosPage() {
     if (loading) {
         return (
             <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
-                <div className="flex justify-center items-center h-64"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+                <div className="flex justify-center items-center h-64">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <p className="ml-3 text-muted-foreground">Cargando pagos...</p>
+                </div>
             </DashboardLayout>
         );
     }
-    
-    // Si hay error y no hay datos que mostrar
+
     if (error && pagos.length === 0 && alumnos.length === 0) {
         return (
             <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
                 <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
                     <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos iniciales</h3>
+                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
                     <p className="text-muted-foreground max-w-md">{error}</p>
                     <Button className="mt-4" onClick={fetchDatos}>
                         Intentar de nuevo
@@ -374,15 +425,13 @@ export default function PagosPage() {
         );
     }
 
-
     // --- RENDERIZADO PRINCIPAL ---
     return (
         <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
             <div className="space-y-6">
                 
                 {/* --- NUEVO FILTRO DE MES PARA TARJETAS --- */}
-                <div className="flex justify-between items-center">
-                    
+                <div className="flex justify-end">
                     <Select onValueChange={setCardMonthFilter} value={cardMonthFilter}>
                         <SelectTrigger className="w-full md:w-[240px]">
                             <SelectValue placeholder="Filtrar totales por mes" />
@@ -398,12 +447,12 @@ export default function PagosPage() {
                 </div>
 
                 {/* --- TARJETAS DE RESUMEN (grid-cols-3) --- */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                    <Card className="border-l-4 border-l-green-500">
+                <div className="grid grid-cols-3 gap-4">
+                    <Card>
                         <CardHeader className="pb-2"><CardDescription className="text-xs">Total Pagado</CardDescription></CardHeader>
                         <CardContent><div className="text-xl md:text-2xl font-bold text-green-600">C${totalPagado.toLocaleString()}</div></CardContent>
                     </Card>
-                    <Card className="border-l-4 border-l-orange-500">
+                    <Card>
                         <CardHeader className="pb-2">
                             <CardDescription className="text-xs">
                                 {cardMonthFilter === "Todos" ? "Total Pendiente (Anual)" : `Pendiente (${cardMonthFilter.split(" ")[0]})`}
@@ -411,29 +460,27 @@ export default function PagosPage() {
                         </CardHeader>
                         <CardContent><div className="text-xl md:text-2xl font-bold text-orange-600">C${totalPendiente.toLocaleString()}</div></CardContent>
                     </Card>
-                    <Card className="flex items-center justify-center p-4 border-l-4 border-l-blue-500">
-                         <Link href="/dashboard/propietario/pagos/nuevo" className="w-full">
-                            <Button className="w-full h-12 text-base">
-                                <Plus className="h-5 w-5 mr-2" />
-                                Registrar Pago
-                            </Button>
-                        </Link>
+                    <Card>
+                        <CardHeader className="pb-2"><CardDescription className="text-xs">Total Registros</CardDescription></CardHeader>
+                        <CardContent><div className="text-xl md:text-2xl font-bold">{totalRegistros}</div></CardContent>
                     </Card>
                 </div>
 
                 {/* --- CONTROLES DE BÚSQUEDA Y ACCIÓN --- */}
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4">
-                    <div className="relative w-full sm:max-w-sm">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            placeholder="Buscar por alumno..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9 w-full"
-                        />
+                <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
+                    <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
+                        <div className="relative w-full sm:max-w-sm">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Buscar por alumno..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 w-full"
+                            />
+                        </div>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         <Button 
                             variant="outline" 
                             onClick={() => setViewMode(viewMode === 'lista' ? 'cuaderno' : 'lista')}
@@ -446,7 +493,13 @@ export default function PagosPage() {
                             }
                             {viewMode === 'lista' ? 'Ver Resumen' : 'Ver Historial'}
                         </Button>
-                        {/* Botón flotante solo para lista, el de nuevo pago ya está en la tarjeta */}
+                        
+                        <Link href="/dashboard/propietario/pagos/nuevo" className="w-full sm:w-auto">
+                            <Button className="w-full">
+                                <Plus className="h-4 w-4 mr-2" />
+                                Registrar Pago
+                            </Button>
+                        </Link>
                     </div>
                 </div>
 
@@ -468,7 +521,6 @@ export default function PagosPage() {
                         </CardContent>
                     </Card>
                 )}
-
 
                 {/* --- RENDERIZADO CONDICIONAL DE LA TABLA --- */}
                 <Card>
@@ -538,7 +590,7 @@ export default function PagosPage() {
                             </CardHeader>
                             <CardContent>
                                 {alumnos.length === 0 ? (
-                                     <div className="text-center py-8 text-muted-foreground">No hay alumnos activos para mostrar el resumen anual.</div>
+                                    <div className="text-center py-8 text-muted-foreground">No hay alumnos activos para mostrar el resumen anual.</div>
                                 ) : (
                                     <div className="overflow-x-auto">
                                         <Table className="min-w-[1200px] md:min-w-[1400px]"> 
@@ -630,5 +682,4 @@ export default function PagosPage() {
             </div>
         </DashboardLayout>
     )
-    
 }

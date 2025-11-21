@@ -58,7 +58,7 @@ import {
     AlertTriangle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // <--- Importamos Supabase
+import { supabase } from "@/lib/supabase";
 
 const menuItems: MenuItem[] = [
     { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20", },
@@ -76,6 +76,7 @@ export default function UsuariosPage() {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [sendingInvitation, setSendingInvitation] = useState<string | null>(null);
 
     const [usuarios, setUsuarios] = useState<any[]>([]);
     const [solicitudes, setSolicitudes] = useState<any[]>([]);
@@ -87,20 +88,6 @@ export default function UsuariosPage() {
         rol: "tutor",
         username: "",
     });
-
-    // Helper para manejar 404/204 como lista vacía
-    const handleFetchResponse = async (res: Response, type: 'users' | 'solicitudes') => {
-        if (res.ok) {
-            return await res.json();
-        }
-        // Si no hay datos (404 o 204), retornamos un array vacío
-        if (res.status === 404 || res.status === 204) {
-            return [];
-        }
-        // Si es otro error, lanzamos excepción
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || `Error al cargar ${type} (${res.status})`);
-    };
 
     // 1. Cargar Datos
     const fetchData = async () => {
@@ -122,18 +109,39 @@ export default function UsuariosPage() {
                 fetch(`${apiUrl}/solicitudes`, { headers }),
             ]);
 
-            const usuariosData = await handleFetchResponse(resUsers, 'users');
-            const solicitudesData = await handleFetchResponse(resSolicitudes, 'solicitudes');
+            // Manejo mejorado de respuestas
+            if (!resUsers.ok) {
+                const errorText = await resUsers.text();
+                console.error("Error cargando usuarios:", resUsers.status, errorText);
+                if (resUsers.status === 404 || resUsers.status === 204) {
+                    setUsuarios([]);
+                } else {
+                    throw new Error(`Error ${resUsers.status} al cargar usuarios`);
+                }
+            } else {
+                const usuariosData = await resUsers.json();
+                setUsuarios(usuariosData);
+            }
 
-            setUsuarios(usuariosData);
-            setSolicitudes(solicitudesData);
+            if (!resSolicitudes.ok) {
+                const errorText = await resSolicitudes.text();
+                console.error("Error cargando solicitudes:", resSolicitudes.status, errorText);
+                if (resSolicitudes.status === 404 || resSolicitudes.status === 204) {
+                    setSolicitudes([]);
+                } else {
+                    throw new Error(`Error ${resSolicitudes.status} al cargar solicitudes`);
+                }
+            } else {
+                const solicitudesData = await resSolicitudes.json();
+                setSolicitudes(solicitudesData);
+            }
             
         } catch (err: any) {
-            console.error(err);
+            console.error("Error en fetchData:", err);
             setError(err.message);
             toast({
                 title: "Error de conexión",
-                description: (err as Error).message,
+                description: err.message,
                 variant: "destructive",
             });
         } finally {
@@ -155,7 +163,6 @@ export default function UsuariosPage() {
 
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
             
-            // Enviamos el token en los headers
             const res = await fetch(`${apiUrl}/users`, {
                 method: "POST",
                 headers: { 
@@ -164,16 +171,14 @@ export default function UsuariosPage() {
                 },
                 body: JSON.stringify({
                     ...newUser,
-                    // Estos campos ya no son estrictamente necesarios porque el service los maneja
-                    estatus: "INVITADO", 
-                    contrasena: undefined,
-                    username: newUser.username || undefined,
+                    estatus: "INVITADO"
                 }),
             });
             
             if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.message || "Error creando usuario");
+                const errorText = await res.text();
+                console.error("Error creando usuario:", res.status, errorText);
+                throw new Error(`Error ${res.status} creando usuario`);
             }
 
             toast({
@@ -184,50 +189,114 @@ export default function UsuariosPage() {
             setNewUser({ nombre: "", email: "", telefono: "", rol: "tutor", username: "" });
             fetchData();
         } catch (error) {
+            console.error("Error en handleCreateUser:", error);
             toast({
                 title: "Error",
-                description: (error as Error).message || "No se pudo crear el usuario.",
+                description: (error as Error).message,
                 variant: "destructive",
             });
         }
     };
 
-    // 3. Enviar Invitación por WhatsApp
-    const handleEnviarInvitacion = async (id: string, nombre: string) => {
+    // 3. Enviar Invitación por WhatsApp - VERSIÓN DEBUG
+    const handleEnviarInvitacion = async (id: string, nombre: string, telefono: string) => {
+        setSendingInvitation(id);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
             if (!token) throw new Error("Sesión no válida.");
 
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-            const res = await fetch(`${apiUrl}/users/${id}/invitacion`, {
-                method: "POST",
+            
+            console.log("🔍 DEBUG - Iniciando invitación:", { 
+                id, 
+                nombre, 
+                telefono,
+                apiUrl: `${apiUrl}/users/${id}/invitacion`
+            });
+
+            // PRIMERO: Verificar que el usuario existe y tiene los datos correctos
+            const userRes = await fetch(`${apiUrl}/users/${id}`, {
                 headers: { 
                     'Authorization': `Bearer ${token}` 
                 }
             });
 
+            if (!userRes.ok) {
+                const errorText = await userRes.text();
+                console.error("❌ Error obteniendo usuario:", userRes.status, errorText);
+                throw new Error(`No se pudo obtener datos del usuario (${userRes.status})`);
+            }
+
+            const userData = await userRes.json();
+            console.log("✅ Datos del usuario:", userData);
+
+            // SEGUNDO: Intentar generar la invitación
+            console.log("🔄 Enviando petición de invitación...");
+            const res = await fetch(`${apiUrl}/users/${id}/invitacion`, {
+                method: "POST",
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}` 
+                }
+            });
+
+            console.log("📊 Respuesta del servidor:", {
+                status: res.status,
+                statusText: res.statusText,
+                ok: res.ok
+            });
+
             if (!res.ok) {
-                 const errorData = await res.json().catch(() => ({}));
-                 throw new Error(errorData.message || "Error generando link");
+                let errorMessage = `Error ${res.status} generando invitación`;
+                try {
+                    const errorData = await res.json();
+                    console.error("❌ Error detallado:", errorData);
+                    errorMessage = errorData.message || errorData.error || errorMessage;
+                } catch (parseError) {
+                    const errorText = await res.text();
+                    console.error("❌ Error texto:", errorText);
+                    errorMessage = errorText || errorMessage;
+                }
+                throw new Error(errorMessage);
             }
 
             const data = await res.json();
-            const texto = encodeURIComponent(data.mensaje);
+            console.log("✅ Datos de invitación:", data);
 
-            const url = `https://wa.me/${data.telefono}?text=${texto}`;
+            // Validar datos mínimos
+            if (!data.mensaje) {
+                throw new Error("El servidor no devolvió el mensaje de invitación");
+            }
+
+            if (!telefono) {
+                throw new Error("El usuario no tiene número de teléfono registrado");
+            }
+
+            // Preparar mensaje para WhatsApp
+            const telefonoLimpio = telefono.replace(/[\s\-\(\)]/g, '');
+            const texto = encodeURIComponent(data.mensaje);
+            const url = `https://wa.me/${telefonoLimpio}?text=${texto}`;
+            
+            console.log("📱 URL de WhatsApp generada:", url);
+            
+            // Abrir WhatsApp
             window.open(url, "_blank");
 
             toast({
-                title: "WhatsApp abierto",
-                description: `Invitación generada para ${nombre}`,
+                title: "✅ WhatsApp abierto",
+                description: `Invitación enviada a ${nombre}`,
             });
+
         } catch (error) {
+            console.error("💥 Error completo en handleEnviarInvitacion:", error);
             toast({
-                title: "Error",
-                description: (error as Error).message || "No se pudo generar la invitación",
+                title: "❌ Error al enviar invitación",
+                description: (error as Error).message,
                 variant: "destructive",
             });
+        } finally {
+            setSendingInvitation(null);
         }
     };
 
@@ -242,21 +311,24 @@ export default function UsuariosPage() {
             const res = await fetch(`${apiUrl}/solicitudes/${id}/aprobar`, {
                 method: "PATCH",
                  headers: { 
+                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}` 
                 }
             });
             
             if (!res.ok) {
-                 const errorData = await res.json().catch(() => ({}));
-                 throw new Error(errorData.message || "Error al aprobar");
+                const errorText = await res.text();
+                console.error("Error aprobando solicitud:", res.status, errorText);
+                throw new Error(`Error ${res.status} al aprobar`);
             }
 
             toast({ title: "Solicitud Aprobada", description: "Usuario creado." });
             fetchData();
         } catch (error) {
+            console.error("Error en handleAprobarSolicitud:", error);
             toast({
                 title: "Error",
-                description: (error as Error).message || "Falló la aprobación.",
+                description: (error as Error).message,
                 variant: "destructive",
             });
         }
@@ -279,13 +351,15 @@ export default function UsuariosPage() {
             });
             
             if (!res.ok) {
-                 const errorData = await res.json().catch(() => ({}));
-                 throw new Error(errorData.message || "Error al eliminar");
+                const errorText = await res.text();
+                console.error("Error eliminando:", res.status, errorText);
+                throw new Error(`Error ${res.status} al eliminar`);
             }
             
             toast({ title: "Eliminado correctamente" });
             fetchData();
         } catch (error) {
+            console.error("Error en handleDelete:", error);
             toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
         }
     };
@@ -315,7 +389,6 @@ export default function UsuariosPage() {
             </DashboardLayout>
         );
     }
-
 
     return (
         <DashboardLayout title="Gestión de Acceso" menuItems={menuItems}>
@@ -349,23 +422,36 @@ export default function UsuariosPage() {
                                 </DialogHeader>
                                 <form onSubmit={handleCreateUser} className="space-y-4 py-2">
                                     <div className="space-y-2">
-                                        <Label>Nombre Completo</Label>
+                                        <Label>Nombre Completo *</Label>
                                         <Input
                                             value={newUser.nombre}
                                             onChange={(e) =>
                                                 setNewUser({ ...newUser, nombre: e.target.value })
                                             }
                                             required
+                                            placeholder="Ej: María González"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Email *</Label>
+                                        <Input
+                                            type="email"
+                                            value={newUser.email}
+                                            onChange={(e) =>
+                                                setNewUser({ ...newUser, email: e.target.value })
+                                            }
+                                            required
+                                            placeholder="Ej: maria@ejemplo.com"
                                         />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
-                                            <Label>Teléfono (WhatsApp)</Label>
+                                            <Label>Teléfono (WhatsApp) *</Label>
                                             <div className="relative">
                                                 <Smartphone className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                                 <Input
                                                     className="pl-8"
-                                                    placeholder="505..."
+                                                    placeholder="50512345678"
                                                     value={newUser.telefono}
                                                     onChange={(e) =>
                                                         setNewUser({ ...newUser, telefono: e.target.value })
@@ -375,7 +461,7 @@ export default function UsuariosPage() {
                                             </div>
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Rol</Label>
+                                            <Label>Rol *</Label>
                                             <Select
                                                 value={newUser.rol}
                                                 onValueChange={(v) =>
@@ -383,14 +469,12 @@ export default function UsuariosPage() {
                                                 }
                                             >
                                                 <SelectTrigger>
-                                                    <SelectValue />
+                                                    <SelectValue placeholder="Selecciona rol" />
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     <SelectItem value="asistente">Asistente</SelectItem>
                                                     <SelectItem value="tutor">Tutor</SelectItem>
-                                                    <SelectItem value="propietario">
-                                                        Administrador
-                                                    </SelectItem>
+                                                    <SelectItem value="propietario">Administrador</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -406,12 +490,19 @@ export default function UsuariosPage() {
 
                     <TabsContent value="activos">
                         <Card>
+                            <CardHeader>
+                                <CardTitle>Usuarios del Sistema</CardTitle>
+                                <CardDescription>
+                                    Gestiona los usuarios con acceso a la plataforma
+                                </CardDescription>
+                            </CardHeader>
                             <CardContent className="p-0">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Nombre</TableHead>
-                                            <TableHead>Usuario (Login)</TableHead>
+                                            <TableHead>Email / Teléfono</TableHead>
+                                            <TableHead>Usuario</TableHead>
                                             <TableHead>Rol</TableHead>
                                             <TableHead>Estado</TableHead>
                                             <TableHead className="text-right">Acciones</TableHead>
@@ -420,23 +511,24 @@ export default function UsuariosPage() {
                                     <TableBody>
                                         {usuarios.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                                                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                                                     No hay usuarios registrados.
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
                                             usuarios.map((u) => (
                                                 <TableRow key={u.id}>
+                                                    <TableCell className="font-medium">{u.nombre}</TableCell>
                                                     <TableCell>
                                                         <div>
-                                                            <p className="font-medium">{u.nombre}</p>
+                                                            <p className="text-sm">{u.email}</p>
                                                             <p className="text-xs text-muted-foreground">
                                                                 {u.telefono}
                                                             </p>
                                                         </div>
                                                     </TableCell>
                                                     <TableCell>
-                                                        <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono text-blue-700">
+                                                        <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono">
                                                             {u.username || "Pendiente..."}
                                                         </code>
                                                     </TableCell>
@@ -455,7 +547,9 @@ export default function UsuariosPage() {
                                                             className={
                                                                 u.estatus === "ACTIVO"
                                                                     ? "bg-green-100 text-green-800 hover:bg-green-100"
-                                                                    : "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                                                                    : u.estatus === "INVITADO"
+                                                                    ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                                                                    : "bg-gray-100 text-gray-800 hover:bg-gray-100"
                                                             }
                                                         >
                                                             {u.estatus || "INVITADO"}
@@ -463,14 +557,19 @@ export default function UsuariosPage() {
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex justify-end items-center gap-2">
-                                                            {/* El estatus ahora es ACTIVO en la BD al crear, pero si el usuario aún no pone contraseña en Supabase, la invitación es válida */}
                                                             {u.estatus === "INVITADO" && ( 
                                                                 <Button
                                                                     size="sm"
                                                                     className="bg-green-600 hover:bg-green-700 text-white h-8"
-                                                                    onClick={() => handleEnviarInvitacion(u.id, u.nombre)}
+                                                                    onClick={() => handleEnviarInvitacion(u.id, u.nombre, u.telefono)}
+                                                                    disabled={sendingInvitation === u.id}
                                                                 >
-                                                                    <Send className="w-3 h-3 mr-2" /> Invitar
+                                                                    {sendingInvitation === u.id ? (
+                                                                        <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                                                    ) : (
+                                                                        <Send className="w-3 h-3 mr-2" />
+                                                                    )}
+                                                                    {sendingInvitation === u.id ? "Enviando..." : "Invitar"}
                                                                 </Button>
                                                             )}
                                                             <Button
@@ -511,32 +610,25 @@ export default function UsuariosPage() {
                                             <TableRow>
                                                 <TableHead>Padre / Contacto</TableHead>
                                                 <TableHead>Alumno</TableHead>
+                                                <TableHead>Contacto</TableHead>
                                                 <TableHead>Dirección</TableHead>
-                                                <TableHead className="text-right">Decisión</TableHead>
+                                                <TableHead className="text-right">Acciones</TableHead>
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {solicitudes.map((s) => (
                                                 <TableRow key={s.id}>
-                                                    <TableCell>
-                                                        <div>
-                                                            <p className="font-medium">{s.padreNombre}</p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {s.telefono}
-                                                            </p>
-                                                        </div>
-                                                    </TableCell>
+                                                    <TableCell className="font-medium">{s.padreNombre}</TableCell>
                                                     <TableCell>{s.hijoNombre}</TableCell>
-                                                    <TableCell>{s.direccion}</TableCell>
+                                                    <TableCell>{s.telefono}</TableCell>
+                                                    <TableCell className="max-w-xs truncate">{s.direccion}</TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex justify-end gap-2">
                                                             <Button
                                                                 size="sm"
                                                                 variant="outline"
                                                                 className="text-red-600 hover:bg-red-50"
-                                                                onClick={() =>
-                                                                    handleDelete(s.id, "solicitudes")
-                                                                }
+                                                                onClick={() => handleDelete(s.id, "solicitudes")}
                                                             >
                                                                 <X className="h-4 w-4" />
                                                             </Button>

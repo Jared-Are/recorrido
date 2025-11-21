@@ -11,27 +11,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
     Plus, 
     Search, 
-    Pencil, 
-    Trash2, 
-    Wrench, 
-    CheckCircle, 
     Users, 
     DollarSign, 
     Bus, 
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown,
+    TrendingDown, 
+    Pencil, 
+    Trash2, 
+    Wrench,
+    CheckCircle,
     Loader2,
     AlertTriangle
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
-// Importamos RequestInit para tipar la opción de fetch
-import type { RequestInit } from "next/dist/server/web/spec-extension/request"
 
-// --- TIPO VEHÍCULO ---
+// --- DEFINICIÓN DEL TIPO VEHÍCULO (CORREGIDO) ---
 export type Vehiculo = {
     id: string;
     nombre: string;
@@ -60,7 +58,7 @@ export default function VehiculosPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState("")
-    const [estadoFilter, setEstadoFilter] = useState("activo"); // Filtro por defecto
+    const [estadoFilter, setEstadoFilter] = useState("activo");
     const { toast } = useToast()
 
     // --- Cargar Vehículos desde la API ---
@@ -78,8 +76,8 @@ export default function VehiculosPage() {
             };
 
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=${estadoFilter}`, { headers });
-            
-            // --- CORRECCIÓN CRÍTICA PARA MANEJAR TABLA VACÍA ---
+
+            // Manejo de tablas vacías
             if (!response.ok) {
                 if (response.status === 404 || response.status === 204) {
                     setVehiculos([]);
@@ -91,7 +89,6 @@ export default function VehiculosPage() {
                 const data: Vehiculo[] = await response.json();
                 setVehiculos(data);
             }
-
         } catch (err: any) {
             setError(err.message);
             toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
@@ -99,10 +96,10 @@ export default function VehiculosPage() {
             setLoading(false);
         }
     };
-    
+
     useEffect(() => {
         fetchVehiculos();
-    }, [toast, estadoFilter]); // Se vuelve a cargar si cambia el filtro de estado
+    }, [toast, estadoFilter]);
 
     // --- Filtrar por Búsqueda ---
     const filteredVehiculos = useMemo(() => {
@@ -123,13 +120,13 @@ export default function VehiculosPage() {
         const vehiculo = vehiculos.find(v => v.id === id);
         if (!vehiculo) return;
 
-        // NOTA: Reemplazar window.confirm por un modal de shadcn/ui si es posible
         let confirmMessage = `¿Estás seguro de mover "${vehiculo.nombre}" a ${nuevoEstado}?`;
         if (nuevoEstado === 'eliminado') {
             confirmMessage = `¿Estás seguro de ELIMINAR PERMANENTEMENTE a "${vehiculo.nombre}"? Esta acción no se puede deshacer.`
         }
-        // Usamos window.confirm
-        if (!window.confirm(confirmMessage)) return;
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
 
         try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -137,6 +134,7 @@ export default function VehiculosPage() {
             if (!token) throw new Error("Sesión no válida.");
 
             const method = nuevoEstado === 'eliminado' ? 'DELETE' : 'PATCH';
+
             const requestOptions: RequestInit = {
                 method: method,
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -154,8 +152,8 @@ export default function VehiculosPage() {
 
             if (!response.ok) {
                 if (method === 'DELETE') {
-                    const errData = await response.json().catch(() => ({}));
-                    if (errData.message && errData.message.includes('foreign key constraint')) {
+                    const errData = await response.json();
+                    if (errData.message && errData.message.includes('violates foreign key constraint')) {
                         throw new Error("No se puede eliminar: El vehículo tiene alumnos, personal o gastos asignados.");
                     } else {
                         throw new Error(errData.message || "No se pudo eliminar el vehículo.");
@@ -164,11 +162,12 @@ export default function VehiculosPage() {
                 throw new Error("No se pudo actualizar el estado del vehículo");
             }
             
-            fetchVehiculos();
+            setVehiculos(prev => prev.filter(v => v.id !== id));
 
-            let mensaje = nuevoEstado === "eliminado" ? "Vehículo eliminado permanentemente" : 
-                          nuevoEstado === "activo" ? "Vehículo activado correctamente" : 
-                          "Vehículo marcado en mantenimiento";
+            let mensaje = "";
+            if (nuevoEstado === "eliminado") mensaje = "Vehículo eliminado correctamente";
+            if (nuevoEstado === "activo") mensaje = "Vehículo activado correctamente";
+            if (nuevoEstado === "en mantenimiento") mensaje = "Vehículo marcado en mantenimiento";
 
             toast({
                 title: "Acción completada",
@@ -179,26 +178,25 @@ export default function VehiculosPage() {
             toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
         }
     }
-    
+
     // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
     if (loading) {
         return (
             <DashboardLayout title="Gestión de Vehículos" menuItems={menuItems}>
                 <div className="flex justify-center items-center h-64">
                     <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                    <p className="ml-3 text-muted-foreground">Cargando flota de vehículos...</p>
+                    <p className="ml-3 text-muted-foreground">Cargando vehículos...</p>
                 </div>
             </DashboardLayout>
         );
     }
-    
-    // Si hay error y no hay datos que mostrar
+
     if (error && vehiculos.length === 0) {
         return (
             <DashboardLayout title="Gestión de Vehículos" menuItems={menuItems}>
                 <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
                     <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos iniciales</h3>
+                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
                     <p className="text-muted-foreground max-w-md">{error}</p>
                     <Button className="mt-4" onClick={fetchVehiculos}>
                         Intentar de nuevo
@@ -207,14 +205,12 @@ export default function VehiculosPage() {
             </DashboardLayout>
         );
     }
-
-
-    // --- RENDERIZADO PRINCIPAL ---
+    
     return (
         <DashboardLayout title="Gestión de Vehículos" menuItems={menuItems}>
             <div className="space-y-6">
 
-                {/* --- TARJETAS --- */}
+                {/* --- TARJETAS (ESTILO ORIGINAL) --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Card>
                         <CardHeader className="pb-2">
@@ -234,17 +230,9 @@ export default function VehiculosPage() {
                             <div className="text-xl md:text-2xl font-bold text-blue-600">{totalCapacidad}</div>
                         </CardContent>
                     </Card>
-                    <Card className="flex items-center justify-center p-4">
-                        <Link href="/dashboard/propietario/vehiculos/nuevo" className="w-full">
-                            <Button className="w-full h-12 text-base">
-                                <Plus className="h-5 w-5 mr-2" />
-                                Registrar Vehículo
-                            </Button>
-                        </Link>
-                    </Card>
                 </div>
 
-                {/* --- BOTÓN Y BUSCADOR --- */}
+                {/* --- BOTÓN Y BUSCADOR (ESTILO ORIGINAL) --- */}
                 <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
                     <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
                         <div className="relative w-full sm:max-w-sm">
@@ -256,7 +244,6 @@ export default function VehiculosPage() {
                                 className="pl-9 w-full"
                             />
                         </div>
-                        {/* --- FILTRO DE ESTADO --- */}
                         <Select onValueChange={setEstadoFilter} value={estadoFilter}>
                             <SelectTrigger className="w-full sm:w-[180px]">
                                 <SelectValue placeholder="Filtrar por estado" />
@@ -267,7 +254,12 @@ export default function VehiculosPage() {
                             </SelectContent>
                         </Select>
                     </div>
-                    {/* El botón de Añadir está en la tarjeta de resumen para desktop */}
+                    <Link href="/dashboard/propietario/vehiculos/nuevo" className="w-full sm:w-auto">
+                        <Button className="w-full">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Registrar Vehículo
+                        </Button>
+                    </Link>
                 </div>
 
                 {/* --- MENSAJE DE TABLA VACÍA --- */}
@@ -276,24 +268,24 @@ export default function VehiculosPage() {
                         <CardHeader>
                             <CardTitle>No hay vehículos registrados</CardTitle>
                             <CardDescription>
-                                Registra el primer vehículo para empezar a asignar rutas y personal.
+                                Comienza registrando tu primer vehículo para gestionar la flota.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <Link href="/dashboard/propietario/vehiculos/nuevo">
                                 <Button>
-                                    <Plus className="h-4 w-4 mr-2" /> Registrar Vehículo
+                                    <Plus className="h-4 w-4 mr-2" /> Registrar Primer Vehículo
                                 </Button>
                             </Link>
                         </CardContent>
                     </Card>
                 )}
 
-                {/* --- TABLA --- */}
+                {/* --- TABLA (SOLO SI HAY DATOS) --- */}
                 {vehiculos.length > 0 && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Flota de Vehículos</CardTitle>
+                            <CardTitle>Flota de Vehículos ({estadoFilter === 'activo' ? 'Activos' : 'En Mantenimiento'})</CardTitle>
                             <CardDescription>Lista de todos los vehículos de la empresa.</CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -310,72 +302,62 @@ export default function VehiculosPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredVehiculos.length === 0 && (
+                                        {filteredVehiculos.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={6} className="text-center h-24">No se encontraron vehículos que coincidan con la búsqueda.</TableCell>
+                                                <TableCell colSpan={6} className="text-center h-24">
+                                                    No se encontraron vehículos que coincidan con los filtros.
+                                                </TableCell>
                                             </TableRow>
+                                        ) : (
+                                            filteredVehiculos.map((v) => (
+                                                <TableRow key={v.id}>
+                                                    <TableCell className="font-medium whitespace-nowrap">{v.nombre}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">{v.placa}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">{v.marca || "N/A"} / {v.modelo || "N/A"}</TableCell>
+                                                    <TableCell>{v.anio || "N/A"}</TableCell>
+                                                    <TableCell>{v.capacidad || "N/A"}</TableCell>
+                                                    <TableCell className="text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <Link href={`/dashboard/propietario/vehiculos/${v.id}`}>
+                                                                <Button variant="ghost" size="icon" title="Editar">
+                                                                    <Pencil className="h-4 w-4" />
+                                                                </Button>
+                                                            </Link>
+                                                            
+                                                            {v.estado === "activo" && (
+                                                                <Button 
+                                                                    variant="ghost" 
+                                                                    size="icon"
+                                                                    title="Poner en Mantenimiento"
+                                                                    onClick={() => cambiarEstadoVehiculo(v.id, "en mantenimiento")}
+                                                                >
+                                                                    <Wrench className="h-4 w-4" />
+                                                                </Button>
+                                                            )}
+                                                            {v.estado === "en mantenimiento" && (
+                                                                <Button 
+                                                                    variant="ghost" 
+                                                                    size="icon"
+                                                                    title="Activar"
+                                                                    onClick={() => cambiarEstadoVehiculo(v.id, "activo")}
+                                                                >
+                                                                    <CheckCircle className="h-4 w-4" />
+                                                                </Button>
+                                                            )}
+                                                            
+                                                            <Button 
+                                                                variant="ghost" 
+                                                                size="icon"
+                                                                title="Eliminar Permanentemente"
+                                                                onClick={() => cambiarEstadoVehiculo(v.id, "eliminado")}
+                                                            >
+                                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                            </Button>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
                                         )}
-                                        {filteredVehiculos.map((v) => (
-                                            <TableRow key={v.id}>
-                                                <TableCell className="font-medium whitespace-nowrap">
-                                                    <div className="flex items-center gap-2">
-                                                        {v.estado === 'activo' ? (
-                                                            <CheckCircle className="h-4 w-4 text-green-500" /> 
-                                                        ) : (
-                                                            <Wrench className="h-4 w-4 text-destructive" />
-                                                        )}
-                                                        {v.nombre}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="whitespace-nowrap">{v.placa}</TableCell>
-                                                <TableCell className="whitespace-nowrap">{v.marca || "N/A"} / {v.modelo || "N/A"}</TableCell>
-                                                <TableCell>{v.anio || "N/A"}</TableCell>
-                                                <TableCell>{v.capacidad || "N/A"}</TableCell>
-                                                
-                                                {/* --- ACCIONES --- */}
-                                                <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <Link href={`/dashboard/propietario/vehiculos/${v.id}`}>
-                                                            <Button variant="ghost" size="icon" title="Editar">
-                                                                <Pencil className="h-4 w-4" />
-                                                            </Button>
-                                                        </Link>
-                                                        
-                                                        {v.estado === "activo" && (
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon"
-                                                                title="Poner en Mantenimiento"
-                                                                onClick={() => cambiarEstadoVehiculo(v.id, "en mantenimiento")}
-                                                            >
-                                                                <Wrench className="h-4 w-4" />
-                                                            </Button>
-                                                        )}
-                                                        {v.estado === "en mantenimiento" && (
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon"
-                                                                title="Activar"
-                                                                onClick={() => cambiarEstadoVehiculo(v.id, "activo")}
-                                                            >
-                                                                <CheckCircle className="h-4 w-4 text-green-600" />
-                                                            </Button>
-                                                        )}
-                                                        
-                                                        <Button 
-                                                            variant="ghost" 
-                                                            size="icon"
-                                                            title="Eliminar Permanentemente"
-                                                            onClick={() => cambiarEstadoVehiculo(v.id, "eliminado")}
-                                                        >
-                                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                                        </Button>
-
-                                                    </div>
-                                                </TableCell>
-                                                {/* --- FIN DE ACCIONES --- */}
-                                            </TableRow>
-                                        ))}
                                     </TableBody>
                                 </Table>
                             </div>

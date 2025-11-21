@@ -4,62 +4,62 @@ import { useState, useEffect } from "react"
 import { AsistenteLayout } from "@/components/asistente-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Bell, ArrowRight, Car, Users, UserCheck, UserX, Loader2 } from "lucide-react"
+import { Bell, ArrowRight, Car, Users, UserCheck, UserX, Loader2, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabase" // <--- IMPORTANTE
+import { supabase } from "@/lib/supabase" 
 import Link from "next/link"
 
 type Aviso = { id: string; titulo: string; };
 type ResumenStats = {
-  vehiculo: { 
-    placa: string; 
-    choferNombre: string; 
-    fotoUrl?: string; 
-  };
-  totalAlumnos: number;
-  presentesHoy: number;
-  ausentesHoy: number;
+  vehiculo: { placa: string; choferNombre: string; fotoUrl?: string; };
+  totalAlumnos: number; presentesHoy: number; ausentesHoy: number;
 };
 type ResumenDia = {
-  stats: ResumenStats;
-  avisos: Aviso[];
-  esDiaLectivo: boolean;
-  motivoNoLectivo: string | null;
-  asistenciaRegistrada: boolean;
+  stats: ResumenStats; avisos: Aviso[]; esDiaLectivo: boolean;
+  motivoNoLectivo: string | null; asistenciaRegistrada: boolean;
 };
 
 export default function AsistenteDashboard() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null); // Estado para capturar el error real
   const [resumen, setResumen] = useState<ResumenDia | null>(null);
 
   useEffect(() => {
     const fetchResumen = async () => {
       setLoading(true);
+      setErrorMsg(null);
       try {
         // 1. OBTENER EL TOKEN DE SESIÓN
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
         if (!token) {
-            // Si no hay token, redirigir al login (opcional, o dejar que falle)
-            throw new Error("No hay sesión activa");
+            throw new Error("No hay sesión activa. Por favor inicia sesión nuevamente.");
         }
 
         // 2. ENVIARLO EN LOS HEADERS
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/resumen-hoy`, {
           headers: {
-            'Authorization': `Bearer ${token}`, // <--- CLAVE DE ACCESO
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });
 
-        if (!response.ok) throw new Error("No se pudo cargar el resumen");
+        if (!response.ok) {
+          // 3. LEER EL MENSAJE REAL DEL BACKEND
+          const errorData = await response.json().catch(() => ({}));
+          // Usamos el mensaje del backend o un genérico con el código de estado
+          const mensaje = errorData.message || `Error del servidor (${response.status}): ${response.statusText}`;
+          throw new Error(mensaje);
+        }
+
         const data = await response.json();
         setResumen(data);
       } catch (err: any) {
-        console.error(err);
-        toast({ title: "Error", description: "No se pudieron cargar los datos.", variant: "destructive" });
+        console.error("Error en Dashboard:", err);
+        setErrorMsg(err.message); // Guardamos el mensaje para mostrarlo
+        toast({ title: "Error de carga", description: err.message, variant: "destructive" });
       } finally {
         setLoading(false);
       }
@@ -79,9 +79,33 @@ export default function AsistenteDashboard() {
     );
   }
 
+  // --- PANTALLA DE ERROR PERSONALIZADA ---
+  if (errorMsg) {
+    return (
+      <AsistenteLayout title="Panel del Asistente">
+        <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/20">
+            <div className="bg-red-100 dark:bg-red-900/30 p-3 rounded-full mb-4">
+                <AlertTriangle className="h-8 w-8 text-red-600 dark:text-red-400" />
+            </div>
+            <h3 className="text-lg font-bold text-red-700 dark:text-red-400 mb-2">No se pudieron cargar los datos</h3>
+            <p className="text-red-600/80 dark:text-red-300/80 max-w-md mb-6 font-mono text-sm bg-white/50 dark:bg-black/20 p-2 rounded">
+                {errorMsg}
+            </p>
+            <Button variant="outline" onClick={() => window.location.reload()} className="border-red-200 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40">
+                Intentar de nuevo
+            </Button>
+        </div>
+      </AsistenteLayout>
+    );
+  }
+
   if (!resumen) return null;
 
-  const botonAsistenciaDeshabilitado = !resumen.esDiaLectivo || resumen.asistenciaRegistrada;
+  // --- CORRECCIÓN TEMPORAL: Permite entrar al registro aunque ya esté guardado ---
+  // Se deshabilita solo si NO es día lectivo (días de descanso)
+  const botonAsistenciaDeshabilitado = !resumen.esDiaLectivo; 
+  // -----------------------------------------------------------------------------
+
   let cardDescription = "Listo para iniciar el recorrido.";
   if (!resumen.esDiaLectivo) cardDescription = `Hoy no hay recorrido: ${resumen.motivoNoLectivo}.`;
   else if (resumen.asistenciaRegistrada) cardDescription = "Asistencia ya registrada. ¡Gracias!";
@@ -118,6 +142,7 @@ export default function AsistenteDashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         
+        {/* TARJETA DE VEHÍCULO */}
         <Card className="overflow-hidden col-span-1 md:col-span-2 lg:col-span-1">
             <div className="flex h-full">
                 <div className="p-6 flex-1 flex flex-col justify-center">

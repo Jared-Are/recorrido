@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
+import { supabase } from "@/lib/supabase" // Importar Supabase
 
 // --- DEFINICIÓN DEL MENÚ (Sin cambios) ---
 const menuItems: MenuItem[] = [
@@ -100,73 +101,82 @@ export default function NuevoAvisoPage() {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
   
-  // --- CAMBIO DE ESTADO (mensaje -> contenido) ---
   const [formData, setFormData] = useState({
     titulo: "",
-    contenido: "", // <--- CAMBIADO
+    contenido: "",
     destinatarios: [] as DestinatarioTipo[], 
   })
 
-  // --- FUNCIÓN DE ENVÍO (CONECTADA A LA API) ---
+  // --- FUNCIÓN DE ENVÍO CORREGIDA CON AUTENTICACIÓN ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // El DTO no permite un array vacío, pero el formulario sí.
-    // Dejamos que el DTO (backend) use su valor 'default' si no se marca nada.
-    
     setLoading(true)
 
-    // --- LÓGICA DE ADAPTACIÓN ---
-    // El backend espera UN solo string ('tutores', 'personal', o 'todos')
-    // El frontend usa un array (['tutores', 'personal'])
-    // Necesitamos "traducir" del frontend al backend.
-    
-    let destinatario: 'todos' | 'tutores' | 'personal' | undefined = undefined;
-    const hasTutores = formData.destinatarios.includes('tutores');
-    const hasPersonal = formData.destinatarios.includes('personal');
-
-    if (hasTutores && hasPersonal) {
-        destinatario = 'todos';
-    } else if (hasTutores) {
-        destinatario = 'tutores';
-    } else if (hasPersonal) {
-        destinatario = 'personal';
-    }
-    // Si es 'undefined', el backend DTO es 'opcional' y usará el 'default' de la entidad.
-
-    // --- PAYLOAD CORREGIDO ---
-    // Esto coincide EXACTAMENTE con tu CreateAvisoDto
-    const payload = {
-      titulo: formData.titulo,
-      contenido: formData.contenido, // <--- CAMBIADO
-      destinatario: destinatario,      // <--- CAMBIADO
-      // No enviamos 'fecha', el backend lo maneja
-    }
-
     try {
+      // Obtener el token de sesión de Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      if (!token) {
+        throw new Error("No hay sesión activa. Por favor, inicia sesión nuevamente.");
+      }
+
+      // --- LÓGICA DE ADAPTACIÓN ---
+      let destinatario: 'todos' | 'tutores' | 'personal' | undefined = undefined;
+      const hasTutores = formData.destinatarios.includes('tutores');
+      const hasPersonal = formData.destinatarios.includes('personal');
+
+      if (hasTutores && hasPersonal) {
+          destinatario = 'todos';
+      } else if (hasTutores) {
+          destinatario = 'tutores';
+      } else if (hasPersonal) {
+          destinatario = 'personal';
+      }
+
+      // --- PAYLOAD CORREGIDO ---
+      const payload = {
+        titulo: formData.titulo,
+        contenido: formData.contenido,
+        destinatario: destinatario,
+      }
+
+      // --- HEADERS CON AUTENTICACIÓN ---
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        // Capturamos el error de validación de NestJS
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.message.toString() || "No se pudo enviar el aviso");
+        
+        // Manejar errores específicos de autenticación
+        if (response.status === 401) {
+          throw new Error("Sesión expirada. Por favor, inicia sesión nuevamente.");
+        }
+        
+        throw new Error(errorData?.message?.toString() || `Error ${response.status}: No se pudo enviar el aviso`);
       }
 
       toast({
-        title: "Aviso enviado",
-        description: `El aviso ha sido enviado.`,
+        title: "✅ Aviso enviado",
+        description: "El aviso ha sido enviado correctamente.",
       })
 
       router.push("/dashboard/propietario/avisos")
 
     } catch (err: any) {
+      console.error("Error enviando aviso:", err);
       toast({
-        title: "Error al enviar",
-        description: (err as Error).message,
+        title: "❌ Error al enviar",
+        description: err.message,
         variant: "destructive",
       });
     } finally {
@@ -207,19 +217,20 @@ export default function NuevoAvisoPage() {
                     value={formData.titulo}
                     onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
                     required
+                    disabled={loading}
                   />
                 </div>
                 
-                {/* --- TEXTAREA ACTUALIZADO --- */}
                 <div className="space-y-2">
-                  <Label htmlFor="contenido">Mensaje *</Label> {/* El label puede decir 'Mensaje' */}
+                  <Label htmlFor="contenido">Mensaje *</Label>
                   <Textarea
-                    id="contenido" // <--- CAMBIADO
+                    id="contenido"
                     placeholder="Escribe el mensaje del aviso..."
-                    value={formData.contenido} // <--- CAMBIADO
-                    onChange={(e) => setFormData({ ...formData, contenido: e.target.value })} // <--- CAMBIADO
+                    value={formData.contenido}
+                    onChange={(e) => setFormData({ ...formData, contenido: e.target.value })}
                     rows={4}
                     required
+                    disabled={loading}
                   />
                 </div>
                 
@@ -234,6 +245,7 @@ export default function NuevoAvisoPage() {
                         id="tutores"
                         checked={formData.destinatarios.includes("tutores")}
                         onCheckedChange={() => toggleDestinatario("tutores")}
+                        disabled={loading}
                       />
                       <label htmlFor="tutores" className="text-sm cursor-pointer">
                         Tutores
@@ -244,6 +256,7 @@ export default function NuevoAvisoPage() {
                         id="personal"
                         checked={formData.destinatarios.includes("personal")}
                         onCheckedChange={() => toggleDestinatario("personal")}
+                        disabled={loading}
                       />
                       <label htmlFor="personal" className="text-sm cursor-pointer">
                         Personal
@@ -252,7 +265,6 @@ export default function NuevoAvisoPage() {
                   </div>
                 </div>
                 <div className="flex gap-3 pt-4">
-                  {/* El botón ahora puede estar activo aunque no se marquen destinatarios */}
                   <Button type="submit" disabled={loading}>
                     {loading ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -262,7 +274,7 @@ export default function NuevoAvisoPage() {
                     {loading ? "Enviando..." : "Enviar Aviso"}
                   </Button>
                    <Link href="/dashboard/propietario/avisos">
-                      <Button type="button" variant="outline">
+                      <Button type="button" variant="outline" disabled={loading}>
                           Cancelar
                       </Button>
                    </Link>
