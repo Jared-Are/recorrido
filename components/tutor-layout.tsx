@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
+// 👇 1. IMPORTAR LA CAMPANA
+import { NotificationsBell } from "@/components/notifications-bell"
 
 interface TutorLayoutProps {
   children: React.ReactNode
@@ -19,7 +21,7 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
   const { toast } = useToast()
   
   const [pathname, setPathname] = useState("")
-  const [user, setUser] = useState<{ name: string; role: string; email?: string } | null>(null)
+  const [user, setUser] = useState<{ name: string; role: string } | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -53,37 +55,32 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
     }
   }
 
-  // --- Lógica de Autenticación con Supabase ---
+  // --- Lógica de Autenticación ---
   useEffect(() => {
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         
         if (!session) {
-          window.location.href = "/" 
+          router.push("/login")
           return
         }
 
         const userMetadata = session.user.user_metadata;
         const rol = userMetadata?.rol?.toLowerCase();
         
-        // PERMISOS: Solo acepta 'tutor' o 'propietario'
         if (rol !== 'tutor' && rol !== 'propietario' && rol !== 'padre') {
-          console.warn("⛔ Rol no autorizado para Layout Tutor:", rol);
-          toast({ title: "Acceso Denegado", description: `Tu rol (${rol}) no tiene permiso.`, variant: "destructive" })
-          window.location.href = "/" 
+          router.push("/login")
           return
         }
 
-        // Extraemos el nombre para el header
         setUser({
-          name: userMetadata?.nombre || session.user.email || "Tutor Familiar",
-          role: rol,
-          email: session.user.email
+          name: userMetadata?.nombre || "Tutor Familiar",
+          role: rol === 'propietario' ? 'Administrador' : 'Tutor Familiar',
         })
         
       } catch (error) {
-        console.error("Error verificando sesión del Tutor:", error)
+        console.error("Error auth:", error)
       } finally {
         setLoading(false)
       }
@@ -95,21 +92,19 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     localStorage.removeItem("rememberedUser")
-    window.location.href = "/"
+    router.push("/login") 
   }
 
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-foreground">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     )
   }
 
-  // Si no hay usuario, ya fue redirigido por el useEffect
   if (!user) return null
 
-  // --- NAVEGACIÓN ORIGINAL ---
   const navItems = [
     { title: "Resumen", icon: Users, href: "/dashboard/tutor" },
     { title: "Asistencias", icon: BarChart2, href: "/dashboard/tutor/asistencias" },
@@ -118,42 +113,42 @@ export function TutorLayout({ children, title }: TutorLayoutProps) {
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* Header Superior (ESTILO ORIGINAL) */}
       <header className="bg-card border-b border-border sticky top-0 z-40">
         <div className="flex items-center justify-between px-4 py-3 md:px-6">
+          
+          {/* Izquierda: Título y Nombre (Estilo Admin) */}
           <div>
-            <h1 className="text-lg font-bold text-foreground">{title}</h1>
-            <p className="text-sm text-muted-foreground">{user?.name}</p>
+             <h1 className="text-lg font-bold text-foreground leading-none">{title}</h1>
+             <p className="text-xs text-muted-foreground mt-1">{user?.name}</p>
           </div>
+
+          {/* Derecha: Acciones (Estilo Admin) */}
           <div className="flex items-center gap-2">
+            
+            {/* 👇 2. CAMPANA AGREGADA AQUÍ */}
+            <NotificationsBell />
+
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 md:mr-2" />
+            
+            <Button size="sm" onClick={handleLogout}>
+              <LogOut className="h-4 w-4 mr-2" />
               <span className="hidden md:inline">Cerrar Sesión</span>
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Contenido Principal */}
-      <main className="flex-1 p-4 md:p-6 pb-20">{children}</main>
+      <main className="flex-1 p-4 md:p-6 pb-24">{children}</main>
 
-      {/* Barra de Navegación Inferior (ESTILO ORIGINAL) */}
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center">
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-card border-t border-border z-50 flex justify-around items-center pb-safe">
         {navItems.map((item) => {
           const isActive = pathname === item.href
           return (
-            <Link key={item.title} href={item.href}>
-              <div
-                className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg ${
-                  isActive ? "text-primary" : "text-muted-foreground"
-                }`}
-              >
-                <item.icon className="h-6 w-6" />
-                <span className="text-xs font-medium">{item.title}</span>
-              </div>
+            <Link key={item.title} href={item.href} className={`flex flex-col items-center justify-center gap-1 p-2 rounded-lg transition-all ${isActive ? "text-primary scale-105 font-medium" : "text-muted-foreground"}`}>
+                <item.icon className={`h-6 w-6 ${isActive ? "fill-current/20" : ""}`} />
+                <span className="text-[10px]">{item.title}</span>
             </Link>
           )
         })}

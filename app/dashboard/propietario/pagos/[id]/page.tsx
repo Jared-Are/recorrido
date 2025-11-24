@@ -8,9 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown } from "lucide-react";
+import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase"; // Importar Supabase
 
 // Definimos el tipo Pago
 type Pago = {
@@ -108,22 +109,66 @@ export default function EditarPagoPage() {
     estado: "pendiente",
   });
 
-  // --- Cargar datos del pago a editar ---
+  // --- Función para obtener headers con autenticación ---
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    
+    if (!token) {
+      throw new Error("No hay sesión activa");
+    }
+
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  // --- Cargar datos del pago a editar (CORREGIDO) ---
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      toast({
+        title: "Error",
+        description: "ID de pago no válido",
+        variant: "destructive"
+      });
+      router.push("/dashboard/propietario/pagos");
+      return;
+    }
+
     const fetchPago = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos/${id}`);
+        setLoadingData(true);
+        
+        // Obtener headers con autenticación
+        const headers = await getAuthHeaders();
+        
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos/${id}`, {
+          headers
+        });
+
         if (!response.ok) {
-          throw new Error("No se pudo encontrar el pago");
+          if (response.status === 404) {
+            throw new Error("No se pudo encontrar el pago");
+          } else if (response.status === 401) {
+            throw new Error("No autorizado - por favor inicia sesión nuevamente");
+          } else {
+            throw new Error(`Error del servidor: ${response.status}`);
+          }
         }
+
         const data: Pago = await response.json();
         setFormData({
           ...data,
           fecha: data.fecha ? new Date(data.fecha).toISOString().split('T')[0] : "", 
         });
       } catch (err: any) {
-        toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
+        console.error("Error al cargar pago:", err);
+        toast({ 
+          title: "Error al cargar", 
+          description: err.message, 
+          variant: "destructive" 
+        });
         router.push("/dashboard/propietario/pagos");
       } finally {
         setLoadingData(false);
@@ -142,34 +187,93 @@ export default function EditarPagoPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Enviar actualización a la API ---
+  // --- Enviar actualización a la API (CORREGIDO) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const payload = {
-      monto: Number(formData.monto),
-      mes: formData.mes,
-      estado: formData.estado,
-      fecha: formData.estado === 'pagado' ? formData.fecha : null,
-    };
-
     try {
+      // Validaciones
+      if (!formData.mes?.trim()) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El mes es obligatorio", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.monto || formData.monto <= 0) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El monto debe ser mayor a cero", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.estado) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El estado es obligatorio", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (formData.estado === 'pagado' && !formData.fecha) {
+        toast({ 
+          title: "Error de validación", 
+          description: "La fecha de pago es obligatoria cuando el estado es 'pagado'", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        monto: Number(formData.monto),
+        mes: formData.mes.trim(),
+        estado: formData.estado,
+        fecha: formData.estado === 'pagado' ? formData.fecha : null,
+      };
+
+      console.log("📤 Enviando payload:", payload);
+
+      // Obtener headers con autenticación
+      const headers = await getAuthHeaders();
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error("No se pudo actualizar el pago");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "No se pudo actualizar el pago");
       }
 
-      toast({ title: "¡Actualizado!", description: "El pago se ha guardado correctamente." });
-      router.push("/dashboard/propietario/pagos");
+      toast({ 
+        title: "¡Actualizado!", 
+        description: "El pago se ha guardado correctamente." 
+      });
+      
+      // Redirigir después de un breve delay
+      setTimeout(() => {
+        router.push("/dashboard/propietario/pagos");
+      }, 1000);
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
+      console.error("Error al guardar:", err);
+      toast({ 
+        title: "Error al guardar", 
+        description: err.message, 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
@@ -178,7 +282,10 @@ export default function EditarPagoPage() {
   if (loadingData) {
     return (
       <DashboardLayout title="Editar Pago" menuItems={menuItems}>
-        <div className="flex justify-center items-center h-64"><p>Cargando datos del pago...</p></div>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="ml-2">Cargando datos del pago...</span>
+        </div>
       </DashboardLayout>
     );
   }
@@ -209,19 +316,43 @@ export default function EditarPagoPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="mes">Mes de Pago *</Label>
-                  <Input id="mes" name="mes" value={formData.mes} onChange={handleChange} required />
+                  <Input 
+                    id="mes" 
+                    name="mes" 
+                    value={formData.mes} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                    placeholder="Ej: Enero 2024"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="monto">Monto (C$) *</Label>
-                  <Input id="monto" name="monto" type="number" value={formData.monto} onChange={handleChange} required />
+                  <Input 
+                    id="monto" 
+                    name="monto" 
+                    type="number" 
+                    step="0.01"
+                    value={formData.monto} 
+                    onChange={handleChange} 
+                    required 
+                    disabled={loading}
+                  />
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="estado">Estado *</Label>
-                  <Select value={formData.estado} onValueChange={(value) => handleSelectChange("estado", value)} required>
-                    <SelectTrigger><SelectValue placeholder="Selecciona un estado" /></SelectTrigger>
+                  <Select 
+                    value={formData.estado} 
+                    onValueChange={(value) => handleSelectChange("estado", value)} 
+                    required
+                    disabled={loading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un estado" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pendiente">Pendiente</SelectItem>
                       <SelectItem value="pagado">Pagado</SelectItem>
@@ -231,18 +362,37 @@ export default function EditarPagoPage() {
                 {formData.estado === 'pagado' && (
                   <div className="space-y-2">
                     <Label htmlFor="fecha">Fecha de Pago *</Label>
-                    <Input id="fecha" name="fecha" type="date" value={formData.fecha ?? ''} onChange={handleChange} required />
+                    <Input 
+                      id="fecha" 
+                      name="fecha" 
+                      type="date" 
+                      value={formData.fecha ?? ''} 
+                      onChange={handleChange} 
+                      required 
+                      disabled={loading}
+                    />
                   </div>
                 )}
               </div>
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
-                  <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Cambios"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Guardar Cambios
+                    </>
+                  )}
                 </Button>
                 <Link href="/dashboard/propietario/pagos">
-                  <Button type="button" variant="outline">Cancelar</Button>
+                  <Button type="button" variant="outline" disabled={loading}>
+                    Cancelar
+                  </Button>
                 </Link>
               </div>
             </form>

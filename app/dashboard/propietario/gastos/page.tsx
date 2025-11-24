@@ -445,7 +445,7 @@ export default function GastosPage() {
                                                 <TableCell className="whitespace-nowrap">{new Date(gasto.fecha + "T00:00:00").toLocaleDateString('es-NI')}</TableCell>
                                                 <TableCell className="text-right">
                                                     <div className="flex justify-end gap-2">
-                                                        <Link href={`/dashboard/propietario/gastos/editar/${gasto.id}`}>
+                                                        <Link href={`/dashboard/propietario/gastos/${gasto.id}`}>
                                                             <Button variant="ghost" size="icon" title="Editar">
                                                                 <Pencil className="h-4 w-4" />
                                                             </Button>

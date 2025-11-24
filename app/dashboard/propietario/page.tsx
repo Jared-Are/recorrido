@@ -20,6 +20,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase" // 👈 IMPORTANTE
 
 // --- MENÚ ---
 const menuItems: MenuItem[] = [
@@ -61,26 +62,44 @@ export default function PropietarioDashboard() {
     finVacacionesMedioAnio: ""
   })
 
-  // 1. Cargar Estadísticas al iniciar
+  // 1. Cargar Estadísticas al iniciar (AHORA CON TOKEN)
   useEffect(() => {
     const fetchStats = async () => {
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/configuracion/stats`);
+            // 👇 OBTENER TOKEN
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            
+            if (!token) return; // Si no hay sesión, no cargamos nada (o el layout redirige)
+
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/configuracion/stats`, {
+                headers: { Authorization: `Bearer ${token}` } // 🔑 LA CLAVE QUE FALTABA
+            });
+
             if(res.ok) {
                 const data = await res.json();
                 setStats(data);
+            } else {
+                console.error("Error status:", res.status);
             }
         } catch (error) {
-            console.error("Error cargando stats");
+            console.error("Error cargando stats:", error);
         }
     }
     fetchStats();
   }, []);
 
-  // 2. Cargar Configuración
+  // 2. Cargar Configuración (AHORA CON TOKEN)
   const fetchConfig = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/configuracion`)
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/configuracion`, {
+          headers: { Authorization: `Bearer ${token}` }
+      })
+
       if (res.ok) {
         const data = await res.json()
         setConfigEscolar({
@@ -95,13 +114,19 @@ export default function PropietarioDashboard() {
     }
   }
 
-  // Acción: Guardar Configuración
+  // Acción: Guardar Configuración (AHORA CON TOKEN)
   const handleSaveConfig = async () => {
     setLoadingConfig(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/configuracion`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}` // 🔑 Token
+        },
         body: JSON.stringify(configEscolar)
       })
       if (!res.ok) throw new Error("Error al guardar")
@@ -114,14 +139,20 @@ export default function PropietarioDashboard() {
     }
   }
 
-  // Acción: Suspender Clases
+  // Acción: Suspender Clases (AHORA CON TOKEN)
   const handleEmergencyStop = async () => {
     if (!motivoEmergencia.trim() || !fechaSuspension) return
     setLoadingConfig(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dias-no-lectivos`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}` // 🔑 Token
+        },
         body: JSON.stringify({ 
             fecha: fechaSuspension, 
             motivo: motivoEmergencia 
@@ -145,7 +176,7 @@ export default function PropietarioDashboard() {
     }
   }
 
-  // Abrir modal de emergencia (pone fecha de hoy por defecto)
+  // Abrir modal de emergencia
   const openEmergencyModal = () => {
       setFechaSuspension(new Date().toISOString().split('T')[0]);
       setIsEmergencyOpen(true);
@@ -234,7 +265,7 @@ export default function PropietarioDashboard() {
                     </Card>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[500px]">
-                     <DialogHeader>
+                      <DialogHeader>
                         <DialogTitle>Configuración del Ciclo</DialogTitle>
                     </DialogHeader>
                     <div className="grid gap-6 py-4">

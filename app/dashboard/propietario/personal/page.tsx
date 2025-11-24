@@ -29,12 +29,12 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 
-// --- TIPO PERSONAL (ACTUALIZADO) ---
+// --- TIPO PERSONAL (Coincide con la Entidad del Backend) ---
 export type Personal = {
     id: string;
     nombre: string;
-    puesto: string;
-    contacto: string;
+    puesto: string;      
+    contacto: string; 
     salario: number;
     fechaContratacion: string; 
     estado: "activo" | "inactivo" | "eliminado";
@@ -45,19 +45,17 @@ export type Personal = {
     }
 };
 
-// --- Menú (El mismo de siempre) ---
 const menuItems: MenuItem[] = [
-    { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
-    { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
-    { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
-    { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
-    { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
-    { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
-    { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
-    { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
-]
+  { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
+  { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
+  { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
+  { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
+  { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
+  { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
+  { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
+  { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
+];
 
-// Helper de formato de moneda
 const formatCurrency = (num: number) => {
     return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -70,23 +68,23 @@ export default function PersonalPage() {
     const [estadoFilter, setEstadoFilter] = useState("activo"); 
     const { toast } = useToast()
 
-    // --- Cargar Personal desde la API ---
+    // --- Cargar Personal ---
     const fetchPersonal = async () => {
         setLoading(true);
         setError(null);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida o expirada.");
+            if (!token) throw new Error("Sesión no válida.");
 
             const headers = {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             };
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal?estado=${estadoFilter}`, { headers });
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+            const response = await fetch(`${apiUrl}/personal?estado=${estadoFilter}`, { headers });
 
-            // Manejo de tablas vacías
             if (!response.ok) {
                 if (response.status === 404 || response.status === 204) {
                     setPersonal([]);
@@ -108,9 +106,10 @@ export default function PersonalPage() {
     
     useEffect(() => {
         fetchPersonal();
-    }, [toast, estadoFilter]); 
+    }, [estadoFilter]); 
 
-    // --- Filtrar por Búsqueda ---
+
+    // --- Filtrado ---
     const filteredPersonal = useMemo(() => {
         return personal.filter(
             (p) =>
@@ -120,17 +119,16 @@ export default function PersonalPage() {
         );
     }, [personal, searchTerm]);
 
-    // --- Cálculos ---
     const totalPersonal = personal.length;
-    const totalSalarios = personal.reduce((sum, p) => sum + (p.salario || 0), 0);
+    const totalSalarios = personal.reduce((sum, p) => sum + (Number(p.salario) || 0), 0);
 
-    // --- Lógica de Acciones (Conectada a la API) ---
+    // --- Acciones (Desactivar/Eliminar) ---
     const cambiarEstadoPersonal = async (id: string, nuevoEstado: "activo" | "inactivo" | "eliminado") => {
         const empleado = personal.find(p => p.id === id);
         if (!empleado) return;
 
         const confirmMessage = nuevoEstado === 'eliminado' 
-            ? `¿Estás seguro de ELIMINAR permanentemente a ${empleado.nombre}? Esta acción no se puede deshacer.`
+            ? `¿Estás seguro de ELIMINAR permanentemente a ${empleado.nombre}?`
             : `¿Estás seguro de ${nuevoEstado === 'inactivo' ? 'DESACTIVAR' : 'ACTIVAR'} a ${empleado.nombre}?`;
             
         if (!window.confirm(confirmMessage)) return;
@@ -138,90 +136,57 @@ export default function PersonalPage() {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida.");
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
             const method = nuevoEstado === 'eliminado' ? 'DELETE' : 'PATCH';
+            const options: any = { method, headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } };
             
-            const requestOptions: RequestInit = {
-                method: method,
-                headers: { 'Authorization': `Bearer ${token}` }
-            };
-
             if (nuevoEstado !== 'eliminado') {
-                requestOptions.headers = { ...requestOptions.headers, 'Content-Type': 'application/json' };
-                requestOptions.body = JSON.stringify({ estado: nuevoEstado });
+                options.body = JSON.stringify({ estado: nuevoEstado });
             }
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal/${id}`, requestOptions);
-
+            const response = await fetch(`${apiUrl}/personal/${id}`, options);
+            
             if (!response.ok) {
-                // Manejo de error específico para eliminar (ForeignKey)
-                if (method === 'DELETE') {
-                    const errData = await response.json().catch(() => ({}));
-                    if (errData.message && errData.message.includes('foreign key constraint')) {
-                        throw new Error("No se puede eliminar: El empleado está asignado a un vehículo o gasto.");
-                    } else {
-                        throw new Error(errData.message || "No se pudo eliminar el empleado.");
-                    }
-                }
-                throw new Error("No se pudo actualizar el estado del empleado");
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.message || "No se pudo completar la acción");
             }
             
-            setPersonal(prevPersonal => prevPersonal.filter(p => p.id !== id));
+            if (nuevoEstado === 'eliminado') {
+                setPersonal(prev => prev.filter(p => p.id !== id));
+            } else {
+                // Si cambiamos estado y hay filtro, recargamos para que la lista sea consistente
+                if (estadoFilter !== 'todos' && estadoFilter !== nuevoEstado) {
+                    setPersonal(prev => prev.filter(p => p.id !== id));
+                } else {
+                    fetchPersonal(); 
+                }
+            }
 
-            let mensaje = "";
-            if (nuevoEstado === "eliminado") mensaje = "Empleado eliminado correctamente";
-            if (nuevoEstado === "inactivo") mensaje = "Empleado desactivado correctamente";
-            if (nuevoEstado === "activo") mensaje = "Empleado activado correctamente";
-
-            toast({
-                title: "Estado actualizado",
-                description: `${mensaje}: ${empleado?.nombre}`,
-            });
+            toast({ title: "Acción completada", description: `Empleado ${nuevoEstado}.` });
 
         } catch (err: any) {
             toast({ title: "Error", description: err.message, variant: "destructive" });
         }
     }
     
-    // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
-    if (loading) {
-        return (
-            <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
-                <div className="flex justify-center items-center h-64">
-                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                    <p className="ml-3 text-muted-foreground">Cargando personal...</p>
-                </div>
-            </DashboardLayout>
-        );
-    }
-
-    if (error && personal.length === 0) {
-        return (
-            <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
-                <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
-                    <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
-                    <p className="text-muted-foreground max-w-md">{error}</p>
-                    <Button className="mt-4" onClick={fetchPersonal}>
-                        Intentar de nuevo
-                    </Button>
-                </div>
-            </DashboardLayout>
-        );
-    }
+    if (loading) return (
+        <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
+            <div className="flex justify-center items-center h-64">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            </div>
+        </DashboardLayout>
+    );
 
     return (
         <DashboardLayout title="Gestión de Personal" menuItems={menuItems}>
             <div className="space-y-6">
 
-                {/* --- TARJETAS DE RESUMEN (ESTILO ORIGINAL) --- */}
+                {/* Resumen */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Card>
                         <CardHeader className="pb-2">
-                            <CardDescription className="text-xs">
-                                Total Personal ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})
-                            </CardDescription>
+                            <CardDescription className="text-xs">Total Personal ({estadoFilter})</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="text-xl md:text-2xl font-bold">{totalPersonal}</div>
@@ -237,21 +202,21 @@ export default function PersonalPage() {
                     </Card>
                 </div>
 
-                {/* --- CONTROLES DE BÚSQUEDA Y ACCIÓN (ESTILO ORIGINAL) --- */}
+                {/* Filtros y Botón */}
                 <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
                     <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
                         <div className="relative w-full sm:max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
-                                placeholder="Buscar por nombre, puesto, vehículo..."
+                                placeholder="Buscar por nombre o puesto..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="pl-9 w-full"
                             />
                         </div>
-                        <Select onValueChange={setEstadoFilter} value={estadoFilter}>
+                        <Select value={estadoFilter} onValueChange={setEstadoFilter}>
                             <SelectTrigger className="w-full sm:w-[180px]">
-                                <SelectValue placeholder="Filtrar por estado" />
+                                <SelectValue placeholder="Estado" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="activo">Activos</SelectItem>
@@ -259,41 +224,22 @@ export default function PersonalPage() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <Link href="/dashboard/propietario/personal/nuevo" className="w-full sm:w-auto">
-                        <Button className="w-full">
-                            <Plus className="h-4 w-4 mr-2" />
-                            Registrar Personal
+                    {/* BOTÓN QUE LLEVA A LA PESTAÑA DE NUEVO PERSONAL */}
+                    <Link href="/dashboard/propietario/personal/nuevo">
+                        <Button>
+                            <Plus className="h-4 w-4 mr-2" /> Registrar Personal
                         </Button>
                     </Link>
                 </div>
 
-                {/* --- MENSAJE DE TABLA VACÍA --- */}
-                {personal.length === 0 && !loading && (
-                    <Card className="mt-6 border-l-4 border-l-purple-500">
-                        <CardHeader>
-                            <CardTitle>No hay personal registrado</CardTitle>
-                            <CardDescription>
-                                Registra a tus empleados para asignarles roles, vehículos y salarios.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Link href="/dashboard/propietario/personal/nuevo">
-                                <Button>
-                                    <Plus className="h-4 w-4 mr-2" /> Registrar Personal
-                                </Button>
-                            </Link>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* --- TABLA (SOLO SI HAY DATOS) --- */}
-                {personal.length > 0 && (
+                {/* Tabla */}
+                {personal.length === 0 && !loading ? (
+                    <div className="text-center py-10 text-muted-foreground border rounded-md bg-gray-50">
+                        No hay personal registrado con este filtro.
+                    </div>
+                ) : (
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Personal ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})</CardTitle>
-                            <CardDescription>Lista de todo el personal de la empresa.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
+                        <CardContent className="p-0">
                             <div className="overflow-x-auto">
                                 <Table>
                                     <TableHeader>
@@ -302,74 +248,44 @@ export default function PersonalPage() {
                                             <TableHead>Puesto</TableHead>
                                             <TableHead>Contacto</TableHead>
                                             <TableHead>Salario</TableHead>
-                                            <TableHead>Vehículo Asignado</TableHead>
-                                            <TableHead>Contratación</TableHead>
+                                            <TableHead>Vehículo</TableHead>
                                             <TableHead className="text-right">Acciones</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredPersonal.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={7} className="text-center h-24">
-                                                    No se encontró personal que coincida con los filtros.
+                                        {filteredPersonal.map((p) => (
+                                            <TableRow key={p.id}>
+                                                <TableCell className="font-medium">{p.nombre}</TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline" className="capitalize">{p.puesto}</Badge>
+                                                </TableCell>
+                                                <TableCell>{p.contacto || "N/A"}</TableCell>
+                                                <TableCell>C${formatCurrency(p.salario)}</TableCell>
+                                                <TableCell>{p.vehiculo?.nombre || "Sin asignar"}</TableCell>
+                                                <TableCell className="text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        <Link href={`/dashboard/propietario/personal/${p.id}`}>
+                                                            <Button variant="ghost" size="icon" title="Editar">
+                                                                <Pencil className="h-4 w-4" />
+                                                            </Button>
+                                                        </Link>
+
+                                                        {p.estado === 'activo' ? (
+                                                            <Button variant="ghost" size="icon" title="Desactivar" onClick={() => cambiarEstadoPersonal(p.id, "inactivo")}>
+                                                                <EyeOff className="h-4 w-4" />
+                                                            </Button>
+                                                        ) : (
+                                                            <Button variant="ghost" size="icon" title="Activar" onClick={() => cambiarEstadoPersonal(p.id, "activo")}>
+                                                                <Eye className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
+                                                        <Button variant="ghost" size="icon" className="text-red-600" onClick={() => cambiarEstadoPersonal(p.id, "eliminado")}>
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
-                                        ) : (
-                                            filteredPersonal.map((p) => (
-                                                <TableRow key={p.id}>
-                                                    <TableCell className="font-medium whitespace-nowrap">{p.nombre}</TableCell>
-                                                    <TableCell>
-                                                        <Badge variant={p.puesto === 'Chofer' ? 'default' : 'secondary'}>
-                                                            {p.puesto}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="whitespace-nowrap">{p.contacto || "N/A"}</TableCell>
-                                                    <TableCell className="whitespace-nowrap">C${formatCurrency(p.salario)}</TableCell>
-                                                    <TableCell className="whitespace-nowrap">{p.vehiculo?.nombre || "N/A"}</TableCell>
-                                                    <TableCell className="whitespace-nowrap">
-                                                        {p.fechaContratacion ? new Date(p.fechaContratacion + "T00:00:00").toLocaleDateString('es-NI') : "N/A"}
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <div className="flex justify-end gap-2">
-                                                            <Link href={`/dashboard/propietario/personal/${p.id}`}>
-                                                                <Button variant="ghost" size="icon" title="Editar">
-                                                                    <Pencil className="h-4 w-4" />
-                                                                </Button>
-                                                            </Link>
-                                                            
-                                                            {p.estado === "activo" ? (
-                                                                <Button 
-                                                                    variant="ghost" 
-                                                                    size="icon"
-                                                                    title="Desactivar"
-                                                                    onClick={() => cambiarEstadoPersonal(p.id, "inactivo")}
-                                                                >
-                                                                    <EyeOff className="h-4 w-4" />
-                                                                </Button>
-                                                            ) : (
-                                                                <Button 
-                                                                    variant="ghost" 
-                                                                    size="icon"
-                                                                    title="Activar"
-                                                                    onClick={() => cambiarEstadoPersonal(p.id, "activo")}
-                                                                >
-                                                                    <Eye className="h-4 w-4" />
-                                                                </Button>
-                                                            )}
-                                                            
-                                                            <Button 
-                                                                variant="ghost" 
-                                                                size="icon"
-                                                                title="Eliminar (Mover a Papelera)"
-                                                                onClick={() => cambiarEstadoPersonal(p.id, "eliminado")}
-                                                            >
-                                                                <Trash2 className="h-4 w-4 text-destructive" />
-                                                            </Button>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
-                                        )}
+                                        ))}
                                     </TableBody>
                                 </Table>
                             </div>
@@ -378,5 +294,5 @@ export default function PersonalPage() {
                 )}
             </div>
         </DashboardLayout>
-    )
+    );
 }

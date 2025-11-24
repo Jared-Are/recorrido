@@ -1,31 +1,14 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
-    Download,
-    TrendingUp,
-    Users,
-    DollarSign,
-    TrendingDown,
-    Bus,
-    UserCog,
-    Bell,
-    BarChart3,
-    Loader2,
-    AlertTriangle
+    Download, TrendingUp, Users, DollarSign, TrendingDown,
+    Bus, UserCog, Bell, BarChart3, Loader2, AlertTriangle,
+    Wallet
 } from "lucide-react"
 import {
-    Bar,
-    BarChart,
-    Pie,
-    PieChart,
-    Cell,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    ResponsiveContainer,
-    Tooltip,
-    Legend
+    Bar, BarChart, Pie, PieChart, Cell, XAxis, YAxis,
+    CartesianGrid, ResponsiveContainer, Tooltip, Legend
 } from "recharts"
 import { toPng } from 'html-to-image';
 import jsPDF from "jspdf"
@@ -33,29 +16,18 @@ import jsPDF from "jspdf"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
+    Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card"
 import {
-    Tabs,
-    TabsContent,
-    TabsList,
-    TabsTrigger,
+    Tabs, TabsContent, TabsList, TabsTrigger,
 } from "@/components/ui/tabs"
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+    Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabase" // <--- Importamos Supabase
+import { supabase } from "@/lib/supabase"
 
-// --- MENÚ (Igual) ---
+// --- MENÚ ---
 const menuItems: MenuItem[] = [
     { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
     { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -67,11 +39,14 @@ const menuItems: MenuItem[] = [
     { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ]
 
+// Colores para gráficas
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
 export default function ReportesPage() {
     const { toast } = useToast()
-    const [periodo, setPeriodo] = useState("semestre")
+    const [periodo, setPeriodo] = useState("anio")
     const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null) // Nuevo estado de error
+    const [error, setError] = useState<string | null>(null)
     const [data, setData] = useState<any>(null)
     
     const [exporting, setExporting] = useState(false)
@@ -79,14 +54,32 @@ export default function ReportesPage() {
 
     const [isDarkMode, setIsDarkMode] = useState(false);
 
-    // --- CARGA DE DATOS CON AUTENTICACIÓN ---
+    // --- DETECCIÓN DE TEMA (MutationObserver) ---
+    useEffect(() => {
+        const checkTheme = () => {
+             // Verificamos si la clase 'dark' está presente en <html>
+             const isDark = document.documentElement.classList.contains('dark');
+             setIsDarkMode(isDark);
+        };
+        
+        // Chequeo inicial
+        checkTheme();
+
+        // Observar cambios en el atributo 'class' del elemento <html>
+        const observer = new MutationObserver(checkTheme);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        
+        return () => observer.disconnect();
+    }, []);
+
+    // --- CARGA DE DATOS ---
     const fetchData = async () => {
         setLoading(true);
         setError(null);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida o expirada.");
+            if (!token) throw new Error("Sesión no válida.");
 
             const headers = {
                 'Authorization': `Bearer ${token}`,
@@ -97,7 +90,7 @@ export default function ReportesPage() {
             
             if (!res.ok) {
                  if (res.status === 404 || res.status === 204) {
-                    setData({}); // Tratamos como data vacía
+                    setData({}); 
                 } else {
                     const errorData = await res.json().catch(() => ({}));
                     throw new Error(errorData.message || `Error del servidor (${res.status})`);
@@ -119,68 +112,63 @@ export default function ReportesPage() {
         fetchData();
     }, [toast])
 
-    // --- DETECCIÓN DE TEMA (Original) ---
-    useEffect(() => {
-        const checkTheme = () => {
-             const isDark = document.documentElement.classList.contains('dark');
-             setIsDarkMode(isDark);
-        };
-        checkTheme();
-        const observer = new MutationObserver(checkTheme);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
 
-    // --- LÓGICA DE EXPORTAR PDF ---
+    // --- EXPORTAR PDF ---
     const handleExportar = async () => {
         if (!reportRef.current) return;
         setExporting(true);
         try {
             const element = reportRef.current;
-            
             const dataUrl = await toPng(element, { 
                 cacheBust: true,
-                // Fondo forzado para evitar transparencias raras en el PDF
                 backgroundColor: isDarkMode ? '#020817' : '#ffffff' 
             });
 
-            // Configurar PDF (A4)
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pdfWidth = pdf.internal.pageSize.getWidth();
-            
             const imgProps = pdf.getImageProperties(dataUrl);
-            
-            // Calcular altura para mantener el ratio
             const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
             
-            // Si el contenido es más largo que una página, se podría agregar lógica de paginación aquí
             pdf.addImage(dataUrl, 'PNG', 0, 10, pdfWidth, imgHeight);
-            
-            pdf.save(`Reporte_Financiero_${new Date().toISOString().split('T')[0]}.pdf`);
+            pdf.save(`Reporte_Recorrido_${new Date().toISOString().split('T')[0]}.pdf`);
 
-            toast({
-                title: "Reporte exportado",
-                description: "El PDF se ha descargado exitosamente.",
-            });
+            toast({ title: "Reporte exportado", description: "Descarga iniciada." });
         } catch (error) {
-            console.error("Error exportando PDF:", error);
+            console.error("Error PDF:", error);
             toast({ title: "Error", description: "No se pudo generar el PDF.", variant: "destructive" });
         } finally {
             setExporting(false);
         }
     }
-    // ------------------------------------------------------
+
+    // --- ESTILOS DINÁMICOS PARA GRÁFICAS ---
+    // Usamos HEX explícitos para asegurar que Recharts los renderice bien
+    const chartTheme = {
+        textColor: isDarkMode ? "#94a3b8" : "#64748b", // Slate-400 (Dark) vs Slate-500 (Light)
+        gridColor: isDarkMode ? "#334155" : "#e2e8f0", // Slate-700 (Dark) vs Slate-200 (Light)
+        tooltipBg: isDarkMode ? "#1e293b" : "#ffffff", // Slate-900 (Dark) vs White (Light)
+        tooltipBorder: isDarkMode ? "#475569" : "#e2e8f0",
+        tooltipText: isDarkMode ? "#f8fafc" : "#0f172a"
+    };
 
     const CustomTooltip = ({ active, payload, label }: any) => {
         if (active && payload && payload.length) {
             return (
-                <div className="bg-popover text-popover-foreground p-3 text-sm rounded-lg shadow-xl border border-border">
-                    <p className="font-semibold mb-2">{label || payload[0].payload.nombre}</p>
+                <div 
+                    className="p-3 text-sm rounded-lg shadow-xl border"
+                    style={{ 
+                        backgroundColor: chartTheme.tooltipBg, 
+                        borderColor: chartTheme.tooltipBorder,
+                        color: chartTheme.tooltipText
+                    }}
+                >
+                    <p className="font-semibold mb-2">{label || payload[0].payload.nombre || payload[0].name}</p>
                     {payload.map((p: any, i: number) => (
                         <div key={i} className="flex items-center gap-2">
                             <div style={{ width: 8, height: 8, backgroundColor: p.color, borderRadius: '50%' }} />
                             <span className="capitalize">
-                                {p.name}: {['ingreso', 'gasto', 'monto', 'ingresos', 'gastos', 'valor'].some(k => p.dataKey.toLowerCase().includes(k) || p.name.toLowerCase().includes(k)) ? 'C$' : ''}{Number(p.value).toLocaleString()}
+                                {p.name}: {['ingreso', 'gasto', 'monto', 'ingresos', 'gastos', 'valor'].some(k => p.dataKey?.toLowerCase().includes(k) || p.name?.toLowerCase().includes(k)) ? 'C$ ' : ''}
+                                {Number(p.value).toLocaleString()}
                             </span>
                         </div>
                     ))}
@@ -189,10 +177,6 @@ export default function ReportesPage() {
         }
         return null
     }
-
-    const tickColor = isDarkMode ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))"; // Asegurar visibilidad
-    const gridColor = isDarkMode ? "hsl(var(--border) / 0.5)" : "hsl(var(--border))";
-    const cursorFill = isDarkMode ? "hsl(var(--muted) / 0.5)" : "hsl(var(--muted) / 0.3)";
 
     if (loading) {
         return (
@@ -204,27 +188,25 @@ export default function ReportesPage() {
         )
     }
 
-    // PANTALLA DE ERROR O SIN DATOS
-    if (error || !data || Object.keys(data).length === 0 || data.alumnosPorGrado?.length === 0) {
+    if (error || !data || Object.keys(data).length === 0) {
         return (
             <DashboardLayout title="Reportes" menuItems={menuItems}>
                  <div className="flex flex-col justify-center items-center h-96 text-center p-6 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-100">
                     <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 dark:text-red-400 mb-2">No hay datos para generar el reporte</h3>
+                    <h3 className="text-xl font-bold text-red-700 dark:text-red-400 mb-2">Sin datos suficientes</h3>
                     <p className="text-muted-foreground max-w-md mb-4">
-                        {error ? `Error: ${error}` : "Asegúrate de haber registrado alumnos, pagos y gastos."}
+                        {error ? `Error: ${error}` : "Registra alumnos, pagos y gastos para ver las estadísticas."}
                     </p>
-                    <Button onClick={fetchData}>
-                        Intentar Recargar
-                    </Button>
+                    <Button onClick={fetchData}>Recargar</Button>
                 </div>
             </DashboardLayout>
         );
     }
     
-    // Si llegamos aquí, data es válida
-    const totalAlumnos = data.alumnosPorGrado.reduce((acc: number, curr: any) => acc + curr.alumnos, 0);
-
+    const totalAlumnos = data.kpi?.alumnosActivos || 0;
+    // Cálculo simple de deuda estimada (si tu backend no lo manda, lo aproximamos)
+    // Si el backend lo manda en 'kpi', úsalo. Si no, omítelo o calcúlalo localmente.
+    const deudaEstimada = 0; 
 
     return (
         <DashboardLayout title="Reportes y Estadísticas" menuItems={menuItems}>
@@ -242,24 +224,20 @@ export default function ReportesPage() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="semestre">Últimos 6 meses</SelectItem>
-                                <SelectItem value="anio">Último año</SelectItem>
+                                <SelectItem value="anio">Año Actual</SelectItem>
                             </SelectContent>
                         </Select>
                         <Button onClick={handleExportar} disabled={exporting}>
-                            {exporting ? (
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                                <Download className="h-4 w-4 mr-2" />
-                            )}
-                            {exporting ? "Generando PDF..." : "Exportar PDF"}
+                            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                            {exporting ? "Generando..." : "Exportar PDF"}
                         </Button>
                     </div>
                 </div>
 
-                {/* --- CONTENEDOR CAPTURABLE PARA PDF --- */}
-                <div ref={reportRef} id="reporte-content" className="space-y-6 p-1 bg-background">
+                {/* --- CONTENEDOR PDF --- */}
+                <div ref={reportRef} id="reporte-content" className="space-y-6 p-1 bg-background text-foreground">
                     
-                    {/* --- KPI CARDS --- */}
+                    {/* KPI CARDS */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <Card>
                             <CardHeader className="pb-2 flex-row items-center justify-between">
@@ -282,13 +260,13 @@ export default function ReportesPage() {
                                 <div className="text-2xl font-bold text-pink-600 dark:text-pink-400">
                                     C$ {data.kpi.gastosTotales.toLocaleString()}
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-1">Histórico acumulado</p>
+                                <p className="text-xs text-muted-foreground mt-1">Operativos y Mantenimiento</p>
                             </CardContent>
                         </Card>
                         <Card>
                             <CardHeader className="pb-2 flex-row items-center justify-between">
-                                <CardDescription>Beneficio Neto</CardDescription>
-                                <TrendingUp className="w-4 h-4 text-indigo-500" />
+                                <CardDescription>Utilidad Neta</CardDescription>
+                                <Wallet className="w-4 h-4 text-indigo-500" />
                             </CardHeader>
                             <CardContent>
                                 <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
@@ -306,7 +284,7 @@ export default function ReportesPage() {
                                 <div className="text-2xl font-bold text-foreground">
                                     {totalAlumnos}
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-1">Total matriculados</p>
+                                <p className="text-xs text-muted-foreground mt-1">Matrícula actual</p>
                             </CardContent>
                         </Card>
                     </div>
@@ -314,27 +292,27 @@ export default function ReportesPage() {
                     <Tabs defaultValue="general" className="space-y-4">
                         <TabsList>
                             <TabsTrigger value="general">Finanzas General</TabsTrigger>
-                            <TabsTrigger value="vehiculos">Rentabilidad por Unidad</TabsTrigger>
-                            <TabsTrigger value="pagos">Estado de Pagos</TabsTrigger>
+                            <TabsTrigger value="vehiculos">Rentabilidad x Unidad</TabsTrigger>
+                            <TabsTrigger value="pagos">Estado de Cartera</TabsTrigger>
                             <TabsTrigger value="alumnos">Demografía</TabsTrigger>
                         </TabsList>
                         
-                        {/* PESTAÑA 1: INGRESOS VS GASTOS */}
+                        {/* GRÁFICA 1: BARRAS FINANCIERAS */}
                         <TabsContent value="general">
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Balance Mensual</CardTitle>
-                                    <CardDescription>Comparativa de Ingresos vs Gastos</CardDescription>
+                                    <CardDescription>Ingresos vs Gastos por mes</CardDescription>
                                 </CardHeader>
                                 <CardContent className="h-[400px] w-full">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart data={data.finanzasPorMes}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
-                                            <XAxis dataKey="mes" stroke={tickColor} fontSize={12} />
-                                            <YAxis stroke={tickColor} fontSize={12} tickFormatter={(v) => `C$${v/1000}k`} />
-                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: cursorFill }}/>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.gridColor} />
+                                            <XAxis dataKey="mes" stroke={chartTheme.textColor} fontSize={12} />
+                                            <YAxis stroke={chartTheme.textColor} fontSize={12} tickFormatter={(v) => `C$${v/1000}k`} />
+                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: isDarkMode ? '#33415540' : '#f1f5f980' }}/>
                                             <Legend />
-                                            <Bar dataKey="ingreso" name="Ingresos" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="ingreso" name="Ingresos" fill="#10b981" radius={[4, 4, 0, 0]} />
                                             <Bar dataKey="gasto" name="Gastos" fill="#ef4444" radius={[4, 4, 0, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
@@ -342,35 +320,35 @@ export default function ReportesPage() {
                             </Card>
                         </TabsContent>
 
-                        {/* PESTAÑA 2: VEHÍCULOS */}
+                        {/* GRÁFICA 2: VEHÍCULOS */}
                         <TabsContent value="vehiculos">
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Rentabilidad por Unidad</CardTitle>
-                                    <CardDescription>Comparativa histórica de Ingresos Generados vs. Gastos Operativos por vehículo.</CardDescription>
+                                    <CardTitle>Rentabilidad por Vehículo</CardTitle>
+                                    <CardDescription>Rendimiento financiero por unidad de transporte</CardDescription>
                                 </CardHeader>
-                                <CardContent className="h-[400px] w-full p-4 pt-0 overflow-x-auto">
+                                <CardContent className="h-[400px] w-full overflow-x-auto">
                                     <ResponsiveContainer width="100%" height="100%" minWidth={500}>
                                         <BarChart data={data.finanzasPorVehiculo}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
-                                            <XAxis dataKey="nombre" stroke={tickColor} fontSize={12} />
-                                            <YAxis stroke={tickColor} fontSize={12} tickFormatter={(v) => `C$${v/1000}k`} />
-                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: cursorFill }}/>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.gridColor} />
+                                            <XAxis dataKey="nombre" stroke={chartTheme.textColor} fontSize={12} />
+                                            <YAxis stroke={chartTheme.textColor} fontSize={12} tickFormatter={(v) => `C$${v/1000}k`} />
+                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: isDarkMode ? '#33415540' : '#f1f5f980' }}/>
                                             <Legend />
-                                            <Bar dataKey="ingresos" name="Ingresos Generados" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                            <Bar dataKey="gastos" name="Gastos Operativos" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="ingresos" name="Generado" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                            <Bar dataKey="gastos" name="Gastado" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </CardContent>
                             </Card>
                         </TabsContent>
 
-                        {/* PESTAÑA 3: DONA DE PAGOS */}
+                        {/* GRÁFICA 3: DONA DE PAGOS */}
                         <TabsContent value="pagos">
                             <Card>
                                 <CardHeader>
-                                    <CardTitle>Estado de Cartera</CardTitle>
-                                    <CardDescription>Proporción de pagos al día vs pendientes (Global)</CardDescription>
+                                    <CardTitle>Estado de Pagos</CardTitle>
+                                    <CardDescription>Porcentaje de cumplimiento mensual</CardDescription>
                                 </CardHeader>
                                 <CardContent className="h-[400px] w-full flex justify-center">
                                     <ResponsiveContainer width="100%" height="100%" minWidth={300}>
@@ -386,9 +364,10 @@ export default function ReportesPage() {
                                                 innerRadius={80} 
                                                 outerRadius={120} 
                                                 paddingAngle={2}
+                                                stroke="none"
                                             >
-                                                {data.estadoPagos.map((entry: any, index: number) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
+                                                {data.estadoPagos?.map((entry: any, index: number) => (
+                                                    <Cell key={`cell-${index}`} fill={entry.color} />
                                                 ))}
                                             </Pie>
                                         </PieChart>
@@ -397,17 +376,17 @@ export default function ReportesPage() {
                             </Card>
                         </TabsContent>
                         
-                        {/* PESTAÑA 4: ALUMNOS POR GRADO */}
+                        {/* GRÁFICA 4: BARRAS ALUMNOS */}
                         <TabsContent value="alumnos">
                             <Card>
-                                <CardHeader><CardTitle>Distribución por Grado</CardTitle></CardHeader>
+                                <CardHeader><CardTitle>Alumnos por Grado</CardTitle></CardHeader>
                                 <CardContent className="h-[400px] w-full">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <BarChart data={data.alumnosPorGrado} layout="vertical" margin={{ left: 20 }}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={gridColor} />
-                                            <XAxis type="number" stroke={tickColor} />
-                                            <YAxis dataKey="grado" type="category" width={100} stroke={tickColor} fontSize={12} />
-                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: cursorFill }}/>
+                                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={chartTheme.gridColor} />
+                                            <XAxis type="number" stroke={chartTheme.textColor} />
+                                            <YAxis dataKey="grado" type="category" width={100} stroke={chartTheme.textColor} fontSize={12} />
+                                            <Tooltip content={<CustomTooltip />} cursor={{ fill: isDarkMode ? '#33415540' : '#f1f5f980' }}/>
                                             <Bar dataKey="alumnos" name="Cantidad" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={30} />
                                         </BarChart>
                                     </ResponsiveContainer>

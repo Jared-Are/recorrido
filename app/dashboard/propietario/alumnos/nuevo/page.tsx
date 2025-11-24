@@ -52,7 +52,6 @@ const menuItems: MenuItem[] = [
     { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20", },
 ];
 
-// --- TIPO PARA EL VEHÍCULO CARGADO ---
 type Vehiculo = {
     id: string;
     nombre: string;
@@ -66,13 +65,12 @@ export default function NuevoAlumnoPage() {
     const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
     const [vehiculosLoading, setVehiculosLoading] = useState(true);
 
-    // CORREGIDO: Estructura basada en los errores de la API
     const [formData, setFormData] = useState({
         nombre: "",
         tutorNombre: "",
-        tutorTelefono: "", // Campo separado para teléfono del tutor
+        tutorTelefono: "", 
         grado: "",
-        direccion: "", // Dirección como campo separado
+        direccion: "", 
         vehiculoId: "", 
         precio: "", 
         hermanos: false,
@@ -82,14 +80,13 @@ export default function NuevoAlumnoPage() {
         { nombre: string; grado: string; vehiculoId: string }[] 
     >([]);
 
-    // --- CARGAR VEHÍCULOS AL INICIAR ---
     useEffect(() => {
         const fetchVehiculos = async () => {
             setVehiculosLoading(true);
             try {
                 const { data: { session } } = await supabase.auth.getSession();
                 const token = session?.access_token;
-                if (!token) throw new Error("Sesión no válida o expirada.");
+                if (!token) throw new Error("Sesión no válida.");
     
                 const headers = {
                     'Authorization': `Bearer ${token}`,
@@ -98,18 +95,10 @@ export default function NuevoAlumnoPage() {
                 
                 const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers });
                 
-                if (!response.ok) {
-                    if (response.status === 404 || response.status === 204) {
-                        setVehiculos([]);
-                    } else {
-                        const errorData = await response.json().catch(() => ({}));
-                        throw new Error(errorData.message || `Error del servidor (${response.status})`);
-                    }
-                } else {
+                if (response.ok) {
                     const data: Vehiculo[] = await response.json();
                     setVehiculos(data);
                 }
-
             } catch (err: any) {
                 console.error("Error al cargar vehículos:", err);
             } finally {
@@ -129,26 +118,24 @@ export default function NuevoAlumnoPage() {
         setOtrosHijos(nuevos);
     };
 
-    const handleChangeHijo = (
-        index: number,
-        field: "nombre" | "grado" | "vehiculoId", 
-        value: string
-    ) => {
+    const handleChangeHijo = (index: number, field: "nombre" | "grado" | "vehiculoId", value: string) => {
         const nuevos = [...otrosHijos];
         nuevos[index][field] = value;
         setOtrosHijos(nuevos);
     };
 
-    // --- GUARDAR EN LA API (CORREGIDO) ---
+    // --- CÁLCULO INTERNO DE PRECIOS (El usuario no ve esto, solo ve el total) ---
+    const calcularPreciosIndividuales = (totalFamiliar: number, totalHijos: number) => {
+        const base = Math.floor(totalFamiliar / totalHijos);
+        const resto = totalFamiliar % totalHijos;
+        const precios = Array(totalHijos).fill(base);
+        precios[0] += resto; // Ajustamos los centavos en el primer hijo
+        return precios;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-
-        const alumnosAInscribir = [
-            { nombre: formData.nombre, grado: formData.grado, vehiculoId: formData.vehiculoId },
-            ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
-        ];
-        const numeroDeHijos = alumnosAInscribir.length;
 
         const precioFamiliar = Number(formData.precio);
         if (precioFamiliar <= 0) {
@@ -157,43 +144,25 @@ export default function NuevoAlumnoPage() {
             return;
         }
 
-        if (precioFamiliar % numeroDeHijos !== 0) {
-            toast({ 
-                title: "Error de Precio", 
-                description: `El precio familiar (C$ ${precioFamiliar}) no es divisible entre el número de hijos (${numeroDeHijos}). Ajuste el precio a un monto que resulte en un número entero por alumno.`, 
-                variant: "destructive",
-                duration: 8000 
-            });
+        // Lista completa de alumnos a registrar
+        const listaHijos = [
+            { nombre: formData.nombre, grado: formData.grado, vehiculoId: formData.vehiculoId },
+            ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
+        ];
+        
+        // Distribuimos el precio internamente
+        const preciosDistribuidos = calcularPreciosIndividuales(precioFamiliar, listaHijos.length);
+
+        if (!formData.tutorNombre.trim() || !formData.tutorTelefono.trim() || !formData.direccion.trim()) {
+            toast({ title: "Faltan datos", description: "Nombre, teléfono y dirección son obligatorios.", variant: "destructive" });
             setLoading(false);
             return;
         }
-        const precioIndividual = precioFamiliar / numeroDeHijos;
-        
-        // Validar que se seleccionó vehículo para todos
-        const vehiculoInvalido = alumnosAInscribir.some(a => !a.vehiculoId || a.vehiculoId === "placeholder-value");
-        if (vehiculoInvalido) {
-             toast({ title: "Error", description: "Por favor, asigna un vehículo a cada alumno.", variant: "destructive" });
+
+        if (listaHijos.some(a => !a.vehiculoId || a.vehiculoId === "placeholder-value")) {
+             toast({ title: "Falta Vehículo", description: "Asigna un vehículo a cada alumno.", variant: "destructive" });
              setLoading(false);
              return;
-        }
-
-        // Validaciones basadas en los errores de la API
-        if (!formData.tutorNombre.trim()) {
-            toast({ title: "Error", description: "El nombre del tutor es obligatorio.", variant: "destructive" });
-            setLoading(false);
-            return;
-        }
-
-        if (!formData.tutorTelefono.trim()) {
-            toast({ title: "Error", description: "El teléfono del tutor es obligatorio.", variant: "destructive" });
-            setLoading(false);
-            return;
-        }
-
-        if (!formData.direccion.trim()) {
-            toast({ title: "Error", description: "La dirección es obligatoria.", variant: "destructive" });
-            setLoading(false);
-            return;
         }
 
         try {
@@ -206,54 +175,40 @@ export default function NuevoAlumnoPage() {
                 'Content-Type': 'application/json'
             };
 
-            const promesasDeCreacion = alumnosAInscribir.map((alumno) => {
+            // 🚀 SOLUCIÓN A LA "CONDICIÓN DE CARRERA"
+            // Usamos un bucle for...of para enviar uno por uno.
+            for (const [index, alumno] of listaHijos.entries()) {
                 
-                // CORREGIDO: Estructura basada en los errores de la API
                 const payload = {
                     nombre: alumno.nombre.trim(),
                     grado: alumno.grado,
-                    tutor: { // Solo las propiedades que la API espera
+                    tutor: { 
                         nombre: formData.tutorNombre.trim(),
                         telefono: formData.tutorTelefono.trim()
                     },
-                    direccion: formData.direccion.trim(), // Dirección como campo separado
+                    direccion: formData.direccion.trim(),
                     vehiculoId: alumno.vehiculoId,
-                    precio: precioIndividual, 
+                    precio: preciosDistribuidos[index], // Precio fraccionado
                     activo: true, 
                 };
 
-                console.log("Enviando payload:", payload); // Para debugging
+                console.log(`Registrando ${index + 1}/${listaHijos.length}: ${payload.nombre}`);
 
-                return fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, {
                     method: 'POST',
                     headers: headers,
                     body: JSON.stringify(payload),
                 });
-            });
 
-            const responses = await Promise.all(promesasDeCreacion);
-
-            const respuestasFallidas = responses.filter((res) => !res.ok);
-            if (respuestasFallidas.length > 0) {
-                const firstFailed = respuestasFallidas[0];
-                let errorMessage = `Error al registrar a uno o más alumnos (${firstFailed.status}).`;
-                
-                try {
-                    const errorData = await firstFailed.json();
-                    errorMessage = errorData.message || errorData.error || errorMessage;
-                    
-                    // Si hay errores de validación específicos, mostrarlos
-                    if (errorData.details && Array.isArray(errorData.details)) {
-                        errorMessage += `: ${errorData.details.join(', ')}`;
-                    }
-                } catch {}
-
-                throw new Error(errorMessage);
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    throw new Error(errorData.message || `Error al registrar a ${alumno.nombre}`);
+                }
             }
 
             toast({
-                title: "Registro Exitoso",
-                description: `Se registraron ${alumnosAInscribir.length} alumno(s) (${precioIndividual.toFixed(2)} C$ c/u).`,
+                title: "Familia Registrada",
+                description: `Se registraron ${listaHijos.length} alumnos correctamente.`,
             });
             
             router.push("/dashboard/propietario/alumnos");
@@ -261,8 +216,8 @@ export default function NuevoAlumnoPage() {
         } catch (err: any) {
             console.error("Error en handleSubmit:", err);
             toast({
-                title: "Error en el registro",
-                description: err.message || "No se pudieron guardar los datos.",
+                title: "Error",
+                description: err.message,
                 variant: "destructive",
             });
         } finally {
@@ -273,133 +228,81 @@ export default function NuevoAlumnoPage() {
     return (
         <DashboardLayout title="Registrar Alumno" menuItems={menuItems}>
             <div className="space-y-6">
-                
                 <div className="flex justify-between">
                     <Link href="/dashboard/propietario/alumnos">
                         <Button variant="ghost" size="sm">
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Volver a la lista
+                            <ArrowLeft className="h-4 w-4 mr-2" /> Volver
                         </Button>
                     </Link>
                 </div>
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Nuevo Alumno</CardTitle>
-                        <CardDescription>Completa los datos del estudiante y su familia.</CardDescription>
+                        <CardTitle>Nuevo Ingreso</CardTitle>
+                        <CardDescription>Registra al estudiante y su grupo familiar.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             
-                            {/* --- SECCIÓN DE DATOS PRINCIPALES --- */}
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="nombre">Nombre Completo * (Hijo 1)</Label>
+                                    <Label htmlFor="nombre">Nombre del Alumno * (Hijo 1)</Label>
                                     <Input 
                                         id="nombre" 
-                                        placeholder="Ej: Juan Pérez López" 
+                                        placeholder="Ej: Juan Pérez" 
                                         value={formData.nombre} 
                                         onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} 
                                         required 
                                     />
                                 </div>
-
                                 <div className="space-y-2">
-                                    <Label htmlFor="tutorNombre">Nombre del Tutor *</Label>
-                                    <Input 
-                                        id="tutorNombre" 
-                                        placeholder="Ej: María Pérez" 
-                                        value={formData.tutorNombre} 
-                                        onChange={(e) => setFormData({ ...formData, tutorNombre: e.target.value })} 
-                                        required 
-                                    />
-                                </div>
-                                
-                                {/* CORREGIDO: Campo de teléfono separado para el tutor */}
-                                <div className="space-y-2">
-                                    <Label htmlFor="tutorTelefono">Teléfono del Tutor *</Label>
-                                    <Input 
-                                        id="tutorTelefono" 
-                                        type="tel" 
-                                        placeholder="Ej: 555-0123" 
-                                        value={formData.tutorTelefono} 
-                                        onChange={(e) => setFormData({ ...formData, tutorTelefono: e.target.value })} 
-                                        required 
-                                    />
-                                </div>
-
-                                {/* CORREGIDO: Dirección como campo separado */}
-                                <div className="space-y-2">
-                                    <Label htmlFor="direccion">Dirección *</Label>
-                                    <Input 
-                                        id="direccion" 
-                                        placeholder="Ej: Calle Ficticia 123, Zona A" 
-                                        value={formData.direccion} 
-                                        onChange={(e) => setFormData({ ...formData, direccion: e.target.value })} 
-                                        required 
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="grado">Grado * (Hijo 1)</Label>
+                                    <Label htmlFor="grado">Grado *</Label>
                                     <Select value={formData.grado} onValueChange={(value) => setFormData({ ...formData, grado: value })}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Selecciona el grado" />
-                                        </SelectTrigger>
+                                        <SelectTrigger><SelectValue placeholder="Selecciona grado" /></SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
-                                            <SelectItem value="2° Preescolar">2° Preescolar</SelectItem>
-                                            <SelectItem value="3° Preescolar">3° Preescolar</SelectItem>
-                                            <SelectItem value="1° Primaria">1° Primaria</SelectItem>
-                                            <SelectItem value="2° Primaria">2° Primaria</SelectItem>
-                                            <SelectItem value="3° Primaria">3° Primaria</SelectItem>
-                                            <SelectItem value="4° Primaria">4° Primaria</SelectItem>
-                                            <SelectItem value="5° Primaria">5° Primaria</SelectItem>
-                                            <SelectItem value="6° Primaria">6° Primaria</SelectItem>
+                                            {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
+                                                <SelectItem key={g} value={g}>{g}</SelectItem>
+                                            ))}
                                         </SelectContent>
                                     </Select>
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="tutorNombre">Nombre del Tutor *</Label>
+                                    <Input id="tutorNombre" placeholder="Ej: María Pérez" value={formData.tutorNombre} onChange={(e) => setFormData({ ...formData, tutorNombre: e.target.value })} required />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="tutorTelefono">Teléfono del Tutor *</Label>
+                                    <Input id="tutorTelefono" type="tel" placeholder="Ej: 555-0123" value={formData.tutorTelefono} onChange={(e) => setFormData({ ...formData, tutorTelefono: e.target.value })} required />
+                                </div>
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label htmlFor="direccion">Dirección Completa *</Label>
+                                    <Input id="direccion" placeholder="Ej: Del palo de mango 2c al sur..." value={formData.direccion} onChange={(e) => setFormData({ ...formData, direccion: e.target.value })} required />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Vehículo Asignado *</Label>
+                                    <Select value={formData.vehiculoId} onValueChange={(value) => setFormData({ ...formData, vehiculoId: value })} required>
+                                        <SelectTrigger><SelectValue placeholder="Selecciona vehículo" /></SelectTrigger>
+                                        <SelectContent>
+                                            {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="precio" className="text-green-600 font-bold">Precio Mensual FAMILIAR (C$) *</Label>
+                                    <Input 
+                                        id="precio" 
+                                        type="number" 
+                                        placeholder="Ej: 1500" 
+                                        value={formData.precio} 
+                                        onChange={(e) => setFormData({ ...formData, precio: e.target.value })} 
+                                        required 
+                                        className="border-green-200 focus:ring-green-500"
+                                    />
+                                    <p className="text-xs text-muted-foreground">Monto total que paga la familia por todos los hijos.</p>
+                                </div>
                             </div>
 
-                            {/* --- SELECTOR DE RECORRIDO/VEHÍCULO (HIJO 1) --- */}
-                            <div className="space-y-2">
-                                <Label>Asignar Vehículo * (Hijo 1)</Label>
-                                <Select
-                                    value={formData.vehiculoId}
-                                    onValueChange={(value) => setFormData({ ...formData, vehiculoId: value })}
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder={vehiculosLoading ? "Cargando vehículos..." : "Selecciona un vehículo"} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="placeholder-value" disabled>
-                                            {vehiculos.length === 0 ? "No hay vehículos activos" : "Selecciona un vehículo"}
-                                        </SelectItem>
-                                        {vehiculos.map(v => (
-                                            <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="precio">Precio Mensual (Total por Familia) *</Label>
-                                <Input 
-                                    id="precio" 
-                                    type="number" 
-                                    placeholder="Ej: 1500" 
-                                    value={formData.precio} 
-                                    onChange={(e) => setFormData({ ...formData, precio: e.target.value })} 
-                                    required 
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Este precio se dividirá automáticamente entre todos los hijos registrados.
-                                </p>
-                            </div>
-
-                            {/* --- CHECKBOX HERMANOS --- */}
-                            <div className="flex items-center gap-2 pt-2">
+                            <div className="flex items-center gap-2 pt-4 border-t">
                                 <Checkbox
                                     checked={formData.hermanos}
                                     onCheckedChange={(checked) => {
@@ -409,94 +312,55 @@ export default function NuevoAlumnoPage() {
                                     }}
                                     id="hermanos-check"
                                 />
-                                <Label htmlFor="hermanos-check">¿Tiene más hijos en el recorrido?</Label>
+                                <Label htmlFor="hermanos-check" className="font-medium cursor-pointer">¿Tiene hermanos que viajan también?</Label>
                             </div>
 
-                            {/* --- SECCIÓN DE HERMANOS --- */}
                             {formData.hermanos && (
                                 <div className="space-y-4 mt-4 border-t pt-4">
-                                    <Label>Otros hijos</Label>
                                     {otrosHijos.map((hijo, index) => (
-                                        <div key={index} className="grid gap-2 md:grid-cols-4 items-end">
+                                        <div key={index} className="grid gap-4 md:grid-cols-3 items-end border-b pb-4 last:border-0">
                                             <div className="space-y-2">
-                                                <Label>Nombre del hijo {index + 2}</Label>
-                                                <Input 
-                                                    placeholder={`Ej: Pedro Pérez`} 
-                                                    value={hijo.nombre} 
-                                                    onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} 
-                                                />
+                                                <Label>Nombre Hermano {index + 1}</Label>
+                                                <Input value={hijo.nombre} onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} placeholder="Nombre completo" />
                                             </div>
-                                            
                                             <div className="space-y-2">
-                                                <Label>Grado (Hijo {index + 2})</Label>
+                                                <Label>Grado</Label>
                                                 <Select value={hijo.grado} onValueChange={(value) => handleChangeHijo(index, "grado", value)}>
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder="Selecciona el grado" />
-                                                    </SelectTrigger>
+                                                    <SelectTrigger><SelectValue placeholder="Grado" /></SelectTrigger>
                                                     <SelectContent>
-                                                        <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
-                                                        <SelectItem value="2° Preescolar">2° Preescolar</SelectItem>
-                                                        <SelectItem value="3° Preescolar">3° Preescolar</SelectItem>
-                                                        <SelectItem value="1° Primaria">1° Primaria</SelectItem>
-                                                        <SelectItem value="2° Primaria">2° Primaria</SelectItem>
-                                                        <SelectItem value="3° Primaria">3° Primaria</SelectItem>
-                                                        <SelectItem value="4° Primaria">4° Primaria</SelectItem>
-                                                        <SelectItem value="5° Primaria">5° Primaria</SelectItem>
-                                                        <SelectItem value="6° Primaria">6° Primaria</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            
-                                            <div className="space-y-2">
-                                                <Label>Vehículo (Hijo {index + 2})</Label>
-                                                <Select 
-                                                    value={hijo.vehiculoId}
-                                                    onValueChange={(value) => handleChangeHijo(index, "vehiculoId", value)}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder={vehiculosLoading ? "Cargando..." : "Selecciona un vehículo"} />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="placeholder-value" disabled>
-                                                            {vehiculos.length === 0 ? "No hay vehículos activos" : "Selecciona un vehículo"}
-                                                        </SelectItem>
-                                                        {vehiculos.map(v => (
-                                                            <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                                                        {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
+                                                            <SelectItem key={g} value={g}>{g}</SelectItem>
                                                         ))}
                                                     </SelectContent>
                                                 </Select>
                                             </div>
-
-                                            <Button type="button" variant="destructive" size="icon" onClick={() => eliminarHijo(index)} className="mt-6">
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                            <div className="space-y-2 flex gap-2">
+                                                <div className="flex-1">
+                                                    <Label>Vehículo</Label>
+                                                    <Select value={hijo.vehiculoId} onValueChange={(value) => handleChangeHijo(index, "vehiculoId", value)}>
+                                                        <SelectTrigger><SelectValue placeholder="Vehículo" /></SelectTrigger>
+                                                        <SelectContent>
+                                                            {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <Button type="button" variant="ghost" size="icon" onClick={() => eliminarHijo(index)} className="text-red-500 mt-6">
+                                                    <Trash2 className="h-5 w-5" />
+                                                </Button>
+                                            </div>
                                         </div>
                                     ))}
-                                    <Button type="button" variant="outline" onClick={agregarHijo} className="mt-2">
-                                        <Plus className="h-4 w-4 mr-2" />
-                                        Agregar otro hijo
+                                    <Button type="button" variant="outline" onClick={agregarHijo} size="sm">
+                                        <Plus className="h-4 w-4 mr-2" /> Agregar otro hermano
                                     </Button>
                                 </div>
                             )}
 
-                            {/* --- BOTONES DE GUARDADO --- */}
-                            <div className="flex gap-3 pt-4">
-                                <Button type="submit" disabled={loading}>
-                                    {loading ? (
-                                        <>
-                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                            Guardando...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Save className="h-4 w-4 mr-2" />
-                                            Guardar Alumno(s)
-                                        </>
-                                    )}
+                            <div className="flex gap-3 pt-6">
+                                <Button type="submit" disabled={loading} className="w-full md:w-auto">
+                                    {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                                    Registrar Familia
                                 </Button>
-                                <Link href="/dashboard/propietario/alumnos">
-                                    <Button type="button" variant="outline">Cancelar</Button>
-                                </Link>
                             </div>
                         </form>
                     </CardContent>

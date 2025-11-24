@@ -1,66 +1,59 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import React from "react"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { 
-    Plus, 
-    Search, 
-    Pencil,
-    Trash2,
-    Users, 
-    DollarSign, 
-    Bus, 
-    UserCog, 
-    Bell, 
-    BarChart3, 
-    TrendingDown,
-    List, 
-    LayoutGrid,
-    Loader2,
-    Check,
-    CheckCheck,
-    Gift,
-    ArrowLeft,
-    AlertTriangle
+    Search, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, 
+    Loader2, Check, CheckCheck, Gift, ArrowLeft, AlertTriangle, ChevronDown, ChevronUp
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
-import { Separator } from "@/components/ui/separator" 
-import { supabase } from "@/lib/supabase" // <--- Importamos Supabase
+import { supabase } from "@/lib/supabase"
 
-// --- DEFINICIÓN DE TIPOS ---
+// --- TIPOS ---
 export type Pago = {
     id: string;
     alumnoId: string;
-    alumnoNombre: string; 
     monto: number; 
     mes: string;
     fecha: string; 
-    estado: "pagado" | "pendiente";
 };
 
 export type Alumno = {
     id: string;
     nombre: string;
-    tutor: string;
+    tutorUser?: { nombre: string; telefono: string }; 
+    tutor?: string; 
     grado: string;
     precio?: number;
-    activo: boolean; 
-    // Añadidos del cálculo:
+    activo: boolean;
+    vehiculoId?: string | null;
+    // Auxiliares
+    proximoMes?: string;
+    saldoDic?: number;
     mesesRestantes?: number;
-    proximoMesRegular?: string;
-    saldoDiciembre?: number;
 };
 
+type Familia = {
+    id: string; 
+    tutorNombre: string;
+    tutorTelefono: string;
+    alumnos: Alumno[];
+    totalMensual: number;
+    deudaDiciembreTotal: number;
+    proximoMesComun: string; 
+    montoAPagarComun: number; 
+    totalAnioRestante: number;
+    todosAlDia: boolean;
+    mesesRestantesMax: number;
+}
 
-// --- DEFINICIÓN DEL MENÚ COMPLETO (omitted for brevity) ---
+// --- MENÚ ---
 const menuItems: MenuItem[] = [
     { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
     { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -70,32 +63,21 @@ const menuItems: MenuItem[] = [
     { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
     { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
     { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-500/20" },
-];
+]
 
-
-// --- CONSTANTES DEL CICLO ESCOLAR ---
+// --- CONSTANTES ---
 const ANIO_ESCOLAR = new Date().getFullYear().toString(); 
 const MESES_REGULARES = [
     "Febrero", "Marzo", "Abril", "Mayo", "Junio",
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre"
 ];
 const MES_DICIEMBRE = `Diciembre ${ANIO_ESCOLAR}`; 
-const MES_INICIO_ESCOLAR = `${MESES_REGULARES[0]} ${ANIO_ESCOLAR}`; 
 
 const formatCurrency = (num: number) => {
     return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Filtros para la vista de lista de pagos (que ya no están en este archivo)
-const MESES_FILTRO = ["Todos", ...MESES_REGULARES.map(mes => `${mes} ${ANIO_ESCOLAR}`), MES_DICIEMBRE];
-const GRADO_ORDER = [
-    "1° Preescolar", "2° Preescolar", "3° Preescolar",
-    "1° Primaria", "2° Primaria", "3° Primaria",
-    "4° Primaria", "5° Primaria", "6° Primaria"
-];
-
-
-export default function PagosRapidosPage() { // Esta es /pagos/nuevo
+export default function PagosRapidosPage() {
     const { toast } = useToast();
     const [alumnos, setAlumnos] = useState<Alumno[]>([]);
     const [pagos, setPagos] = useState<Pago[]>([]);
@@ -103,372 +85,315 @@ export default function PagosRapidosPage() { // Esta es /pagos/nuevo
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
     
-    const [proximoMesRegular, setProximoMesRegular] = useState<Map<string, string>>(new Map());
-    const [saldoDiciembre, setSaldoDiciembre] = useState<Map<string, number>>(new Map());
-    const [montosAbonoDiciembre, setMontosAbonoDiciembre] = useState<Map<string, string>>(new Map());
-    const [mesesRegularesRestantes, setMesesRegularesRestantes] = useState<Map<string, number>>(new Map());
+    const [loadingAction, setLoadingAction] = useState<string | null>(null); 
+    const [abonosDiciembre, setAbonosDiciembre] = useState<Map<string, string>>(new Map());
+    const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
 
-    const [pagandoRegularLoading, setPagandoRegularLoading] = useState<string | null>(null);
-    const [pagandoAnioLoading, setPagandoAnioLoading] = useState<string | null>(null);
-    const [pagandoDiciembreLoading, setPagandoDiciembreLoading] = useState<string | null>(null);
-
-
-    // --- Cargar datos ---
+    // --- CARGAR DATOS ---
     const fetchData = async () => {
         setLoading(true);
-        setError(null);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida o expirada.");
+            if (!token) throw new Error("Sesión no válida.");
 
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            };
+            const headers = { 'Authorization': `Bearer ${token}` };
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-            const [alumnosRes, pagosRes] = await Promise.all([
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, { headers }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`, { headers })
+            const [resAlumnos, resPagos] = await Promise.all([
+                fetch(`${apiUrl}/alumnos`, { headers }),
+                fetch(`${apiUrl}/pagos`, { headers })
             ]);
 
-            // Helper para manejar 404/204
-            const handleRes = async (res: Response, name: string) => {
-                if (res.ok) return await res.json();
-                if (res.status === 404 || res.status === 204) return [];
-                const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.message || `Error al cargar ${name} (${res.status})`);
-            };
+            if (resAlumnos.ok) setAlumnos(await resAlumnos.json());
+            if (resPagos.ok) setPagos(await resPagos.json());
 
-            const alumnosData: Alumno[] = await handleRes(alumnosRes, 'alumnos');
-            const pagosData: Pago[] = await handleRes(pagosRes, 'pagos');
-            
-            setAlumnos(alumnosData);
-            setPagos(pagosData);
-
-        } catch (error: any) {
-            setError(error.message);
-            toast({ title: "Error", description: `No se cargaron los datos: ${error.message}`, variant: "destructive" });
+        } catch (err: any) {
+            setError(err.message);
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useEffect(() => { fetchData(); }, []);
 
-    // --- Calcular estados de pago ---
-    useEffect(() => {
-        const nuevoProximoRegular = new Map<string, string>();
-        const nuevoSaldoDiciembre = new Map<string, number>();
-        const nuevoMesesRestantes = new Map<string, number>();
+    // --- LÓGICA DE AGRUPACIÓN ---
+    const familias = useMemo(() => {
+        const grupos = new Map<string, Familia>();
 
-        alumnos.forEach(alumno => {
-            const precioMensual = Number(alumno.precio) || 0; 
-            if (precioMensual === 0) {
-                nuevoProximoRegular.set(alumno.id, "Precio no definido");
-                nuevoSaldoDiciembre.set(alumno.id, 0);
-                nuevoMesesRestantes.set(alumno.id, 0);
-                return; 
-            }
+        const alumnosCalculados = alumnos.map(alumno => {
+            const precio = Number(alumno.precio) || 0;
+            const misPagos = pagos.filter(p => p.alumnoId === alumno.id && p.mes.includes(ANIO_ESCOLAR));
+            const pagosPorMes = new Map<string, number>();
+            misPagos.forEach(p => {
+                pagosPorMes.set(p.mes, (pagosPorMes.get(p.mes) || 0) + Number(p.monto));
+            });
 
-            const pagosPorMes = new Map<string, number>(); 
-            pagos
-                .filter(p => p.alumnoId === alumno.id && p.mes.includes(ANIO_ESCOLAR))
-                .forEach(p => {
-                    const mesAnio = p.mes; 
-                    const total = (pagosPorMes.get(mesAnio) || 0) + (p.monto || 0);
-                    pagosPorMes.set(mesAnio, total);
-                });
-
-            let mesRegularAPagar = "REGULAR PAGADO";
+            let proximo = "AL DIA";
             let mesesRestantes = 0;
-            let mesInicialIdx = -1;
-
-            for (const [index, mes] of MESES_REGULARES.entries()) { 
-                const mesCompleto = `${mes} ${ANIO_ESCOLAR}`;
-                const totalPagadoEsteMes = pagosPorMes.get(mesCompleto) || 0;
-                
-                if (totalPagadoEsteMes < precioMensual - 0.01) { 
-                    mesRegularAPagar = mesCompleto;
-                    mesInicialIdx = index;
-                    break; 
+            for (let i = 0; i < MESES_REGULARES.length; i++) {
+                const mesNombre = `${MESES_REGULARES[i]} ${ANIO_ESCOLAR}`;
+                if ((pagosPorMes.get(mesNombre) || 0) < (precio - 0.1)) { 
+                    proximo = mesNombre;
+                    mesesRestantes = MESES_REGULARES.length - i;
+                    break;
                 }
             }
-
-            if (mesInicialIdx !== -1) {
-                mesesRestantes = MESES_REGULARES.length - mesInicialIdx;
-            }
-            
-            nuevoProximoRegular.set(alumno.id, mesRegularAPagar);
-            nuevoMesesRestantes.set(alumno.id, mesesRestantes);
-
-            // Lógica de Diciembre
-            const totalPagadoDiciembre = pagosPorMes.get(MES_DICIEMBRE) || 0;
-            let saldoDic = precioMensual - totalPagadoDiciembre;
-            if (saldoDic < 0.01) saldoDic = 0; 
-            nuevoSaldoDiciembre.set(alumno.id, saldoDic);
+            const saldoDic = Math.max(0, precio - (pagosPorMes.get(MES_DICIEMBRE) || 0));
+            return { ...alumno, proximoMes: proximo, saldoDic, mesesRestantes };
         });
 
-        setProximoMesRegular(nuevoProximoRegular);
-        setSaldoDiciembre(nuevoSaldoDiciembre); 
-        setMesesRegularesRestantes(nuevoMesesRestantes);
+        alumnosCalculados.forEach(alumno => {
+            const tutorNombre = alumno.tutorUser?.nombre || (typeof alumno.tutor === 'string' ? alumno.tutor : "Sin Tutor");
+            const tutorTelefono = alumno.tutorUser?.telefono || "N/A";
+            
+            if (!grupos.has(tutorNombre)) {
+                grupos.set(tutorNombre, { 
+                    id: tutorNombre, 
+                    tutorNombre, 
+                    tutorTelefono, 
+                    alumnos: [], 
+                    totalMensual: 0, 
+                    deudaDiciembreTotal: 0, 
+                    proximoMesComun: "AL DIA", 
+                    montoAPagarComun: 0, 
+                    totalAnioRestante: 0,
+                    todosAlDia: true,
+                    mesesRestantesMax: 0
+                });
+            }
 
-    }, [alumnos, pagos]);
+            const grupo = grupos.get(tutorNombre)!;
+            grupo.alumnos.push(alumno);
+            grupo.totalMensual += (alumno.precio || 0);
+            grupo.deudaDiciembreTotal += (alumno.saldoDic || 0);
+            
+            if (alumno.proximoMes !== "AL DIA") {
+                const precio = alumno.precio || 0;
+                const meses = alumno.mesesRestantes || 0;
+                grupo.totalAnioRestante += (precio * meses);
+                if (meses > grupo.mesesRestantesMax) grupo.mesesRestantesMax = meses;
+            }
+        });
 
-    // --- Filtrar alumnos ---
-    const alumnosFiltrados = useMemo(() => {
-        return alumnos
-            .map(alumno => ({
-                ...alumno,
-                proximoMesRegular: proximoMesRegular.get(alumno.id) || MES_INICIO_ESCOLAR,
-                saldoDiciembre: saldoDiciembre.get(alumno.id) ?? (alumno.precio || 0),
-                mesesRestantes: mesesRegularesRestantes.get(alumno.id) ?? 0 
-            }))
-            .filter(a => 
-                a.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                a.tutor.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-    }, [alumnos, searchTerm, proximoMesRegular, saldoDiciembre, mesesRegularesRestantes]); 
+        return Array.from(grupos.values()).map(grupo => {
+            let mesMasAntiguoIdx = Infinity;
+            grupo.alumnos.forEach(a => {
+                if (a.proximoMes !== "AL DIA") {
+                    const idx = MESES_REGULARES.indexOf(a.proximoMes?.split(" ")[0] || "");
+                    if (idx !== -1 && idx < mesMasAntiguoIdx) {
+                        mesMasAntiguoIdx = idx;
+                    }
+                }
+            });
 
-    // --- Handler Pagar Regular (Feb-Nov) ---
-    const handlePagarRegular = async (alumno: Alumno, mesRegularAPagar: string) => {
-        setPagandoRegularLoading(alumno.id);
-        const montoAPagar = alumno.precio || 0; 
-        if (montoAPagar === 0) {
-            toast({ title: "Error", description: "El alumno no tiene un precio mensual definido.", variant: "destructive" });
-            setPagandoRegularLoading(null);
-            return;
-        }
+            if (mesMasAntiguoIdx === Infinity) {
+                grupo.proximoMesComun = "AL DIA";
+                grupo.todosAlDia = true;
+            } else {
+                grupo.proximoMesComun = `${MESES_REGULARES[mesMasAntiguoIdx]} ${ANIO_ESCOLAR}`;
+                grupo.todosAlDia = false;
+                grupo.montoAPagarComun = grupo.alumnos.reduce((total, a) => {
+                    return (a.proximoMes === grupo.proximoMesComun) ? total + (a.precio || 0) : total;
+                }, 0);
+            }
+            return grupo;
+        }).filter(g => 
+            g.tutorNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            g.alumnos.some(a => a.nombre.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
 
-        const payload = {
-            alumnoId: alumno.id,
-            alumnoNombre: alumno.nombre,
-            monto: montoAPagar, 
-            mes: mesRegularAPagar,
-            fecha: new Date().toISOString().split("T")[0],
-            estado: "pagado" as const
-        };
+    }, [alumnos, pagos, searchTerm]);
 
+    // --- HANDLERS ---
+
+    const handlePagarMesFamilia = async (familia: Familia) => {
+        setLoadingAction(familia.id);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida.");
+            const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.message || "El pago no se pudo registrar.");
+            const hijosAPagar = familia.alumnos.filter(a => a.proximoMes === familia.proximoMesComun);
+
+            for (const hijo of hijosAPagar) {
+                const payload = {
+                    alumnoId: hijo.id,
+                    alumnoNombre: hijo.nombre,
+                    monto: hijo.precio,
+                    mes: familia.proximoMesComun,
+                    fecha: new Date().toISOString().split("T")[0],
+                    estado: "pagado"
+                };
+                await fetch(`${apiUrl}/pagos`, { method: 'POST', headers, body: JSON.stringify(payload) });
             }
             
-            const nuevoPago = await response.json(); 
-            toast({
-                title: "¡Pago Registrado!",
-                description: `Se registró el pago de ${mesRegularAPagar} para ${alumno.nombre}.`
-            });
-            setPagos(prevPagos => [...prevPagos, nuevoPago]);
+            fetchData(); 
+            toast({ title: "Pago Familiar Exitoso", description: `Se cobró ${familia.proximoMesComun} a la familia.` });
+
         } catch (err: any) {
-            toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+            toast({ title: "Error", description: err.message, variant: "destructive" });
         } finally {
-            setPagandoRegularLoading(null); 
+            setLoadingAction(null);
         }
     };
 
-    // --- Handler Pagar Año (Feb-Nov) (BATCH) ---
-    const handlePagarAnioRegular = async (alumno: Alumno, mesInicialRegular: string) => {
-        setPagandoAnioLoading(alumno.id);
-        const mesInicialIdx = MESES_REGULARES.indexOf(mesInicialRegular.split(" ")[0]);
-        if (mesInicialIdx === -1) {
-            toast({ title: "Error", description: "No se pudo determinar el mes de inicio regular.", variant: "destructive" });
-            setPagandoAnioLoading(null);
-            return;
-        }
-
-        const mesesAPagar = MESES_REGULARES
-            .slice(mesInicialIdx) 
-            .map(m => `${m} ${ANIO_ESCOLAR}`); 
-
-        const payload = {
-            alumnoId: alumno.id,
-            alumnoNombre: alumno.nombre,
-            montoPorMes: alumno.precio || 0,
-            meses: mesesAPagar, 
-            fecha: new Date().toISOString().split("T")[0],
-        };
-
+    const handlePagarAnioFamilia = async (familia: Familia) => {
+        setLoadingAction(familia.id);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida.");
+            const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos/batch`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.message || "El pago en lote no se pudo registrar.");
+            for (const hijo of familia.alumnos) {
+                if (hijo.proximoMes === "AL DIA") continue;
+
+                const mesInicialIdx = MESES_REGULARES.indexOf(hijo.proximoMes!.split(" ")[0]);
+                if (mesInicialIdx === -1) continue;
+
+                const mesesAPagar = MESES_REGULARES
+                    .slice(mesInicialIdx) 
+                    .map(m => `${m} ${ANIO_ESCOLAR}`); 
+
+                const payload = {
+                    alumnoId: hijo.id,
+                    alumnoNombre: hijo.nombre,
+                    montoPorMes: hijo.precio || 0,
+                    meses: mesesAPagar, 
+                    fecha: new Date().toISOString().split("T")[0],
+                };
+
+                await fetch(`${apiUrl}/pagos/batch`, { method: 'POST', headers, body: JSON.stringify(payload) });
             }
-            
-            const nuevosPagos: Pago[] = await response.json(); 
-            toast({
-                title: "¡Meses Regulares Pagados!",
-                description: `Se registraron ${nuevosPagos.length} meses (Feb-Nov) para ${alumno.nombre}.`
-            });
-            
-            setPagos(prevPagos => [...prevPagos, ...nuevosPagos]); 
+
+            fetchData();
+            toast({ title: "¡Año Pagado!", description: "Se completaron todos los pagos regulares de la familia." });
+
         } catch (err: any) {
-            toast({ title: "Error de API (Batch)", description: (err as Error).message, variant: "destructive", duration: 7000 });
+            toast({ title: "Error", description: err.message, variant: "destructive" });
         } finally {
-            setPagandoAnioLoading(null); 
+            setLoadingAction(null);
         }
     };
 
-    // --- Handler Abono Diciembre ---
-    const handleAbonarDiciembre = async (alumno: Alumno, saldoActual: number) => {
-        setPagandoDiciembreLoading(alumno.id);
-        const abonoString = montosAbonoDiciembre.get(alumno.id) || '';
-        const montoAbono = parseFloat(abonoString);
+    // 🚀 ABONO A DICIEMBRE CON DISTRIBUCIÓN EQUITATIVA
+    const handleAbonarDiciembreFamilia = async (familia: Familia) => {
+        const abonoStr = abonosDiciembre.get(familia.id);
+        const abonoTotal = parseFloat(abonoStr || "0");
 
-        if (!abonoString || isNaN(montoAbono) || montoAbono <= 0) {
-            toast({ title: "Monto Inválido", description: "Ingrese un monto válido para el abono de Diciembre.", variant: "destructive" });
-            setPagandoDiciembreLoading(null);
-            return;
+        if (!abonoTotal || abonoTotal <= 0) {
+            return toast({ title: "Monto inválido", description: "Ingrese un monto mayor a 0.", variant: "destructive" });
         }
-        if (montoAbono > (saldoActual + 0.01)) { 
-            toast({ 
-                title: "Monto Excesivo", 
-                description: `El abono (C$ ${montoAbono.toFixed(2)}) no puede ser mayor al saldo pendiente (C$ ${saldoActual.toFixed(2)}).`, 
-                variant: "destructive",
-                duration: 5000
-            });
-            setPagandoDiciembreLoading(null);
-            return;
+        // Se agrega margen de 0.1 para errores de punto flotante
+        if (abonoTotal > familia.deudaDiciembreTotal + 0.1) {
+            return toast({ title: "Monto Excesivo", description: "El abono supera la deuda familiar.", variant: "destructive" });
         }
 
-        const payload = {
-            alumnoId: alumno.id,
-            alumnoNombre: alumno.nombre,
-            monto: montoAbono, 
-            mes: MES_DICIEMBRE, 
-            fecha: new Date().toISOString().split("T")[0],
-            estado: "pagado" as const
-        };
-
+        setLoadingAction(familia.id);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida.");
+            const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) {
-                const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.message || "El abono no se pudo registrar.");
+            // 1. Identificamos quiénes deben y cuánto
+            const hijosConDeuda = familia.alumnos.filter(a => (a.saldoDic || 0) > 0.01);
+            let restantePorDistribuir = abonoTotal;
+            
+            // 2. Calculamos cuánto le toca a cada uno para ser justos
+            const montoIdealPorHijo = remainingToTwoDecimals(restantePorDistribuir / hijosConDeuda.length);
+
+            for (let i = 0; i < hijosConDeuda.length; i++) {
+                const hijo = hijosConDeuda[i];
+                
+                // Si es el último hijo, le damos todo lo que sobre para no perder centavos
+                // Si no, le damos la cuota ideal (limitada a su deuda personal)
+                let pagoHijo = (i === hijosConDeuda.length - 1) 
+                    ? restantePorDistribuir 
+                    : montoIdealPorHijo;
+                
+                // Nunca pagamos más de lo que debe el niño
+                pagoHijo = Math.min(pagoHijo, hijo.saldoDic!);
+                // Ajuste final de decimales
+                pagoHijo = remainingToTwoDecimals(pagoHijo);
+
+                if (pagoHijo <= 0) continue;
+
+                const payload = {
+                    alumnoId: hijo.id,
+                    alumnoNombre: hijo.nombre,
+                    monto: pagoHijo,
+                    mes: MES_DICIEMBRE,
+                    fecha: new Date().toISOString().split("T")[0],
+                    estado: "pagado"
+                };
+
+                await fetch(`${apiUrl}/pagos`, { method: 'POST', headers, body: JSON.stringify(payload) });
+                restantePorDistribuir -= pagoHijo;
             }
-            
-            const nuevoPago = await response.json(); 
 
-            toast({
-                title: "¡Abono Registrado!",
-                description: `Se registró un abono de C$ ${montoAbono.toFixed(2)} para ${MES_DICIEMBRE}.`
-            });
-            setPagos(prevPagos => [...prevPagos, nuevoPago]);
-            
-            setMontosAbonoDiciembre(prev => {
-                const nuevoMapa = new Map(prev);
-                nuevoMapa.delete(alumno.id);
-                return nuevoMapa;
-            });
+            fetchData();
+            toast({ title: "Abono Registrado", description: `Se distribuyeron C$ ${abonoTotal} entre los hermanos.` });
+            setAbonosDiciembre(new Map(abonosDiciembre.set(familia.id, "")));
 
         } catch (err: any) {
-            toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
+            toast({ title: "Error", description: err.message, variant: "destructive" });
         } finally {
-            setPagandoDiciembreLoading(null); 
+            setLoadingAction(null);
         }
     };
 
-    // --- RENDERIZADO ---
-    if (loading) {
-        return (
-            <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
-                <div className="flex justify-center items-center h-64"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
-            </DashboardLayout>
-        );
+    const remainingToTwoDecimals = (num: number) => {
+        return Math.floor(num * 100) / 100;
     }
 
-    if (error && alumnos.length === 0) { // Si hay un error general y la lista está vacía
-        return (
-            <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
-                 <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
-                    <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
-                    <p className="text-muted-foreground max-w-md">{error}</p>
-                    <Button className="mt-4" onClick={fetchData}>
-                        Intentar de nuevo
-                    </Button>
-                </div>
-            </DashboardLayout>
-        );
-    }
-    
-    if (alumnos.length === 0) {
-        return (
-            <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
-                <Card className="mt-6 border-l-4 border-l-blue-500">
-                    <CardHeader>
-                        <CardTitle>No hay alumnos activos</CardTitle>
-                        <CardDescription>
-                            No puedes registrar pagos si no hay alumnos. Dirígete a la gestión de alumnos para matricular a los primeros estudiantes.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <Link href="/dashboard/propietario/alumnos">
-                            <Button>
-                                <Users className="h-4 w-4 mr-2" /> Ir a Registrar Alumnos
-                            </Button>
-                        </Link>
-                    </CardContent>
-                </Card>
-            </DashboardLayout>
-        );
+    const toggleFamily = (id: string) => {
+        const newSet = new Set(expandedFamilies);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setExpandedFamilies(newSet);
     }
 
+    if (loading) return (
+        <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
+            <div className="flex justify-center h-64 items-center"><Loader2 className="h-10 w-10 animate-spin text-primary"/></div>
+        </DashboardLayout>
+    );
+
+    if (alumnos.length === 0) return (
+        <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
+            <div className="text-center p-10 bg-muted/20 rounded-lg border border-dashed">
+                <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4"/>
+                <h3 className="text-xl font-bold">Sin Alumnos Registrados</h3>
+                <p className="text-muted-foreground mb-6">Registra alumnos primero para poder gestionar sus pagos.</p>
+                <Link href="/dashboard/propietario/alumnos/nuevo"><Button>Ir a Registro</Button></Link>
+            </div>
+        </DashboardLayout>
+    );
 
     return (
         <DashboardLayout title="Registro de Pagos" menuItems={menuItems}>
             <div className="space-y-4">
                 
-                {/* --- BOTÓN VOLVER A LA LISTA --- */}
-                <Link href="/dashboard/propietario/pagos">
-                    <Button variant="ghost" size="sm">
-                        <ArrowLeft className="h-4 w-4 mr-2" />
-                        Volver a la lista
-                    </Button>
-                </Link>
-                {/* --- FIN BOTÓN VOLVER --- */}
+                {/* BOTÓN VOLVER Y BÚSQUEDA */}
+                <div className="flex flex-col md:flex-row justify-between gap-4">
+                    <Link href="/dashboard/propietario/pagos">
+                        <Button variant="ghost" size="sm"><ArrowLeft className="mr-2 h-4 w-4"/> Volver al Historial</Button>
+                    </Link>
+                    <div className="relative w-full md:w-96">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                            placeholder="Buscar familia o alumno..." 
+                            className="pl-9"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
 
-
+                {/* LISTA PRINCIPAL */}
                 <Card>
                     <CardHeader>
                         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -478,142 +403,153 @@ export default function PagosRapidosPage() { // Esta es /pagos/nuevo
                                     Pague meses regulares (Feb-Nov) o abone a Diciembre en cualquier momento.
                                 </CardDescription>
                             </div>
-                            <div className="relative w-full md:w-64">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Buscar alumno o tutor..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 w-full"
-                                />
-                            </div>
                         </div>
                     </CardHeader>
 
                     <CardContent className="space-y-2">
-                        {/* Encabezado de la lista */}
-                        <div className="hidden md:flex justify-between items-center p-3 font-semibold text-sm text-muted-foreground">
-                            <div className="w-1/4">Alumno / Mensualidad</div>
-                            <div className="w-1/4 text-center">Pago Regular (Feb-Nov)</div>
-                            <div className="w-1/4 text-center">Pago Diciembre</div>
-                            <div className="w-1/4 text-right">Acciones Rápidas</div>
+                        
+                        {/* Encabezado */}
+                        <div className="hidden md:flex justify-between items-center p-3 font-semibold text-sm text-muted-foreground bg-muted/50 rounded-t-lg">
+                            <div className="w-1/4 pl-2">Familia / Tutor</div>
+                            <div className="w-1/6 text-center">Mensualidad Total</div>
+                            <div className="w-1/6 text-center">Estado (Mes)</div>
+                            <div className="w-1/6 text-center">Saldo Diciembre</div>
+                            <div className="w-[25%] text-right pr-2">Acciones Rápidas</div>
                         </div>
                         
-                        {/* Lista de Alumnos */}
-                        {alumnosFiltrados.map((alumno) => {
-                            const esRegularPagado = alumno.proximoMesRegular === "REGULAR PAGADO";
-                            const esDiciembrePagado = alumno.saldoDiciembre! < 0.01;
-
-                            const isLoadingRegular = pagandoRegularLoading === alumno.id || pagandoAnioLoading === alumno.id;
-                            const isLoadingDiciembre = pagandoDiciembreLoading === alumno.id;
-                            const isLoading = isLoadingRegular || isLoadingDiciembre;
-                            
-                            const precioMensual = (alumno.precio || 0);
-                            const mesesRestantes = alumno.mesesRestantes || 0;
-                            const totalAnioRestante = precioMensual * mesesRestantes;
+                        {/* Filas de Familias */}
+                        {familias.map((familia) => {
+                            const isExpanded = expandedFamilies.has(familia.id);
+                            const isLoading = loadingAction === familia.id;
+                            const esRegularPagado = familia.todosAlDia;
+                            const esDiciembrePagado = familia.deudaDiciembreTotal <= 0;
 
                             return (
-                                <div
-                                    key={alumno.id}
-                                    className="flex flex-col md:flex-row justify-between items-stretch p-3 border rounded-lg hover:bg-muted/50 gap-4"
-                                >
-                                    {/* Col 1: Alumno */}
-                                    <div className="w-full md:w-1/4 flex items-center">
-                                        <div>
-                                            <p className="font-medium">{alumno.nombre}</p>
-                                            <p className="text-xs text-muted-foreground">{alumno.grado} - {alumno.tutor}</p>
-                                            <p className="text-xs text-muted-foreground font-medium">
-                                                Mensualidad: C$ {precioMensual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </p>
+                                <div key={familia.id} className="border rounded-lg overflow-hidden transition-colors hover:bg-muted/20">
+                                    
+                                    {/* FILA PRINCIPAL (Resumen) */}
+                                    <div 
+                                        className="flex flex-col md:flex-row justify-between items-stretch p-3 gap-4 cursor-pointer"
+                                        onClick={() => toggleFamily(familia.id)}
+                                    >
+                                        {/* Col 1: Tutor */}
+                                        <div className="w-full md:w-1/4 flex items-center gap-2">
+                                            <div>
+                                                {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground inline mr-2"/> : <ChevronDown className="h-4 w-4 text-muted-foreground inline mr-2"/>}
+                                                <span className="font-medium">{familia.tutorNombre}</span>
+                                                <div className="text-xs text-muted-foreground mt-0.5">
+                                                    {familia.alumnos.length} hijo(s) • {familia.tutorTelefono}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                    
-                                    {/* Col 2: Pago Regular (Feb-Nov) */}
-                                    <div className="w-full md:w-1/4 flex flex-col justify-center text-left md:text-center">
-                                        <span className="text-sm font-semibold md:hidden">Pago Regular (Feb-Nov)</span>
-                                        {esRegularPagado ? (
-                                            <Badge variant="default" className="w-fit md:mx-auto">Pagado</Badge>
-                                        ) : (
-                                            <span className="font-medium">{alumno.proximoMesRegular}</span>
-                                        )}
-                                    </div>
 
-                                    {/* Col 3: Pago Diciembre */}
-                                    <div className="w-full md:w-1/4 flex flex-col justify-center text-left md:text-center">
-                                        <span className="text-sm font-semibold md:hidden">Saldo Diciembre</span>
-                                        {esDiciembrePagado ? (
-                                            <Badge variant="default" className="w-fit md:mx-auto">Pagado</Badge>
-                                        ) : (
-                                            <span className="font-medium">
-                                                C$ {alumno.saldoDiciembre!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                        )}
-                                    </div>
-                                    
-                                    {/* Col 4: Acciones */}
-                                    <div className="w-full md:w-1/4 text-left md:text-right space-y-3">
+                                        {/* Col 2: Mensualidad Total */}
+                                        <div className="w-full md:w-1/6 flex flex-col justify-center text-left md:text-center">
+                                            <span className="font-bold text-foreground">C$ {formatCurrency(familia.totalMensual)}</span>
+                                        </div>
                                         
-                                        {/* Acciones Regulares (Feb-Nov) */}
-                                        <div className="space-y-2">
+                                        {/* Col 3: Estado Regular */}
+                                        <div className="w-full md:w-1/6 flex flex-col justify-center text-left md:text-center">
+                                            {esRegularPagado ? (
+                                                <Badge variant="default" className="w-fit md:mx-auto bg-green-600">Al día</Badge>
+                                            ) : (
+                                                <div>
+                                                    <span className="font-medium text-orange-600 block text-sm">{familia.proximoMesComun}</span>
+                                                    <span className="text-xs text-muted-foreground">Debe: C$ {formatCurrency(familia.montoAPagarComun)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Col 4: Saldo Diciembre (Solo texto) */}
+                                        <div className="w-full md:w-1/6 flex flex-col justify-center text-left md:text-center">
+                                            {esDiciembrePagado ? (
+                                                <Badge variant="secondary" className="w-fit md:mx-auto bg-purple-100 text-purple-700 hover:bg-purple-200">Pagado</Badge>
+                                            ) : (
+                                                <span className="font-medium text-sm">C$ {formatCurrency(familia.deudaDiciembreTotal)}</span>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Col 5: Acciones (VISUAL CORREGIDO: INPUT ARRIBA, BOTÓN ABAJO) */}
+                                        <div className="w-full md:w-[25%] text-left md:text-right space-y-2" onClick={e => e.stopPropagation()}>
+                                            
+                                            {/* Botón Pagar Mes */}
                                             <Button 
-                                                onClick={() => handlePagarRegular(alumno, alumno.proximoMesRegular!)}
+                                                onClick={() => handlePagarMesFamilia(familia)}
                                                 disabled={isLoading || esRegularPagado}
                                                 size="sm"
-                                                className="w-full"
-                                                title="Pagar el próximo mes regular pendiente"
+                                                className="w-full bg-primary hover:bg-primary/90 h-8"
                                             >
-                                                {pagandoRegularLoading === alumno.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                                                Pagar Mes (C$ {precioMensual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                                                {isLoading ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Check className="mr-2 h-3 w-3" />}
+                                                Pagar Mes (C$ {formatCurrency(familia.montoAPagarComun)})
                                             </Button>
+
+                                            {/* Botón Pagar Año */}
                                             <Button 
-                                                onClick={() => handlePagarAnioRegular(alumno, alumno.proximoMesRegular!)}
-                                                disabled={isLoading || esRegularPagado || mesesRestantes <= 1}
+                                                onClick={() => handlePagarAnioFamilia(familia)}
+                                                disabled={isLoading || esRegularPagado || familia.mesesRestantesMax <= 1}
                                                 size="sm"
                                                 variant="outline"
-                                                className="w-full"
-                                                title={`Pagar ${mesesRestantes} meses restantes por un total de C$ ${totalAnioRestante.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                className="w-full h-8"
                                             >
-                                                {pagandoAnioLoading === alumno.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCheck className="mr-2 h-4 w-4" />}
-                                                Pagar Año (C$ {totalAnioRestante.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                                                {isLoading ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <CheckCheck className="mr-2 h-3 w-3" />}
+                                                Pagar Año (C$ {formatCurrency(familia.totalAnioRestante)})
                                             </Button>
+
+                                            <Separator className="my-1"/>
+
+                                            {/* Sección Abono Diciembre (Vertical) */}
+                                            <div className="space-y-1">
+                                                <Input
+                                                    type="number"
+                                                    placeholder={`Abono (Max: ${formatCurrency(familia.deudaDiciembreTotal)})`}
+                                                    value={abonosDiciembre.get(familia.id) || ''}
+                                                    onChange={(e) => setAbonosDiciembre(new Map(abonosDiciembre.set(familia.id, e.target.value)))}
+                                                    disabled={isLoading || esDiciembrePagado}
+                                                    className="h-8 text-xs"
+                                                />
+                                                <Button 
+                                                    onClick={() => handleAbonarDiciembreFamilia(familia)}
+                                                    disabled={isLoading || esDiciembrePagado}
+                                                    size="sm"
+                                                    variant="secondary"
+                                                    className="w-full h-8 text-xs mt-1" // mt-1 para separar un poco
+                                                >
+                                                    <Gift className="mr-2 h-3 w-3" /> Abonar a Diciembre
+                                                </Button>
+                                            </div>
                                         </div>
-
-                                        <Separator />
-
-                                        {/* Acciones Diciembre */}
-                                        <div className="space-y-2">
-                                            <Input
-                                                type="number"
-                                                placeholder={esDiciembrePagado ? "Diciembre Pagado" : `Abono (Max: ${alumno.saldoDiciembre!.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`}
-                                                value={montosAbonoDiciembre.get(alumno.id) || ''}
-                                                onChange={(e) => {
-                                                    const nuevoMapa = new Map(montosAbonoDiciembre);
-                                                    nuevoMapa.set(alumno.id, e.target.value);
-                                                    setMontosAbonoDiciembre(nuevoMapa);
-                                                }}
-                                                disabled={isLoading || esDiciembrePagado}
-                                                className="w-full"
-                                            />
-                                            <Button 
-                                                onClick={() => handleAbonarDiciembre(alumno, alumno.saldoDiciembre!)}
-                                                disabled={isLoading || esDiciembrePagado}
-                                                size="sm"
-                                                className="w-full"
-                                                variant="secondary"
-                                                title="Abonar al saldo de Diciembre"
-                                            >
-                                                {pagandoDiciembreLoading === alumno.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gift className="mr-2 h-4 w-4" />}
-                                                Abonar a Diciembre
-                                            </Button>
-                                        </div>
-
                                     </div>
+
+                                    {/* DETALLES DESPLEGABLES (HIJOS) */}
+                                    {isExpanded && (
+                                        <div className="bg-muted/30 p-3 border-t border-border text-sm">
+                                            <p className="text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wider">Integrantes de la familia:</p>
+                                            <div className="grid gap-2 md:grid-cols-2">
+                                                {familia.alumnos.map(hijo => (
+                                                    <div key={hijo.id} className="flex justify-between bg-card p-2 rounded border shadow-sm">
+                                                        <div>
+                                                            <span className="font-medium">{hijo.nombre}</span>
+                                                            <span className="text-xs text-muted-foreground ml-2">({hijo.grado})</span>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-xs">Cuota: C$ {formatCurrency(hijo.precio || 0)}</div>
+                                                            <div className={`text-xs font-medium ${hijo.proximoMes === 'AL DIA' ? 'text-green-600' : 'text-orange-600'}`}>
+                                                                {hijo.proximoMes === 'AL DIA' ? 'Al día' : `Debe ${hijo.proximoMes}`}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )
                         })}
                         
-                        {alumnosFiltrados.length === 0 && (
-                            <p className="text-center text-muted-foreground py-4">No se encontraron alumnos con ese término de búsqueda.</p>
+                        {familias.length === 0 && (
+                            <div className="text-center py-12">
+                                <p className="text-muted-foreground">No se encontraron familias con ese término.</p>
+                            </div>
                         )}
 
                     </CardContent>

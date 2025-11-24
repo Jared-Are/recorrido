@@ -23,20 +23,22 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import type { Gasto } from "../page"; // Importamos el tipo Gasto
+import { supabase } from "@/lib/supabase"; // Importar Supabase
+import type { Gasto } from "../page";
 
-// --- NUEVOS TIPOS CARGADOS ---
+// --- TIPOS ---
 type Vehiculo = {
   id: string;
   nombre: string;
 };
+
 type Personal = {
   id: string;
   nombre: string;
   salario: number;
 };
 
-// --- Menú (El mismo de siempre) ---
+// --- Menú ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -67,25 +69,68 @@ export default function EditarGastoPage() {
   
   const [formData, setFormData] = useState<Partial<Gasto>>({});
 
-  // --- Cargar datos del gasto Y ADEMÁS vehículos y personal ---
+  // --- Función para obtener headers con autenticación ---
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    
+    if (!token) {
+      throw new Error("No hay sesión activa");
+    }
+
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  // --- Cargar datos del gasto, vehículos y personal (CORREGIDO) ---
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      toast({
+        title: "Error",
+        description: "ID de gasto no válido",
+        variant: "destructive"
+      });
+      router.push("/dashboard/propietario/gastos");
+      return;
+    }
 
     const fetchDatos = async () => {
       try {
+        setLoadingData(true);
+        
+        // Obtener headers con autenticación
+        const headers = await getAuthHeaders();
+        
         const [gastoRes, vehiculosRes, personalRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal?estado=activo`)
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`, { headers }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal?estado=activo`, { headers })
         ]);
 
-        if (!gastoRes.ok) throw new Error("No se pudo encontrar el gasto");
-        if (!vehiculosRes.ok) throw new Error("No se pudieron cargar los vehículos");
-        if (!personalRes.ok) throw new Error("No se pudo cargar la lista de personal");
-        
+        // Manejo de respuestas
+        if (!gastoRes.ok) {
+          if (gastoRes.status === 404) {
+            throw new Error("No se pudo encontrar el gasto");
+          } else if (gastoRes.status === 401) {
+            throw new Error("No autorizado - por favor inicia sesión nuevamente");
+          } else {
+            throw new Error(`Error del servidor: ${gastoRes.status}`);
+          }
+        }
+
+        if (!vehiculosRes.ok) {
+          console.warn("No se pudieron cargar los vehículos, pero continuamos...");
+        }
+
+        if (!personalRes.ok) {
+          console.warn("No se pudo cargar la lista de personal, pero continuamos...");
+        }
+
         const data: Gasto = await gastoRes.json();
-        const dataVehiculos: Vehiculo[] = await vehiculosRes.json();
-        const dataPersonal: Personal[] = await personalRes.json();
+        const dataVehiculos: Vehiculo[] = vehiculosRes.ok ? await vehiculosRes.json() : [];
+        const dataPersonal: Personal[] = personalRes.ok ? await personalRes.json() : [];
         
         setVehiculos(dataVehiculos);
         setPersonal(dataPersonal);
@@ -98,7 +143,12 @@ export default function EditarGastoPage() {
         });
 
       } catch (err: any) {
-        toast({ title: "Error al cargar", description: (err as Error).message, variant: "destructive" });
+        console.error("Error al cargar datos:", err);
+        toast({ 
+          title: "Error al cargar", 
+          description: err.message, 
+          variant: "destructive" 
+        });
         router.push("/dashboard/propietario/gastos");
       } finally {
         setLoadingData(false);
@@ -114,7 +164,6 @@ export default function EditarGastoPage() {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    // Caso especial: si cambian la categoría a 'salarios'
     if (name === "categoria" && value === "salarios") {
       setFormData(prev => ({ 
         ...prev, 
@@ -122,9 +171,7 @@ export default function EditarGastoPage() {
         descripcion: "Pago de salario: ",
         vehiculoId: "N/A",
       }));
-    } 
-    // Caso especial: si eligen un empleado
-    else if (name === "personalId" && formData.categoria === "salarios") {
+    } else if (name === "personalId" && formData.categoria === "salarios") {
       const empleado = personal.find(p => p.id === value);
       if (empleado) {
         setFormData(prev => ({
@@ -142,57 +189,112 @@ export default function EditarGastoPage() {
         }));
       }
     } else {
-      // Caso normal
       setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
 
-  // --- Enviar actualización a la API ---
+  // --- Enviar actualización a la API (CORREGIDO) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const esSalario = formData.categoria === 'salarios';
-    const esSalarioManual = esSalario && formData.personalId === "N/A";
-
-    const payload = {
-      descripcion: formData.descripcion,
-      categoria: formData.categoria,
-      monto: Number(formData.monto) || undefined, 
-      fecha: formData.fecha,
-      vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId,
-      personalId: formData.personalId === "N/A" ? null : formData.personalId,
-    };
-    
-    if (esSalario && !payload.personalId) {
-        toast({ title: "Error de validación", description: "Por favor, selecciona un empleado o 'N/A (Registrar salario manual)'.", variant: "destructive" });
+    try {
+      // Validaciones
+      if (!formData.descripcion?.trim()) {
+        toast({ 
+          title: "Error de validación", 
+          description: "La descripción es obligatoria", 
+          variant: "destructive" 
+        });
         setLoading(false);
         return;
-    }
-    
-    if ((!esSalario || esSalarioManual) && (!payload.monto || payload.monto <= 0)) {
-       toast({ title: "Error de validación", description: "El monto es obligatorio y debe ser mayor a cero.", variant: "destructive" });
-       setLoading(false);
-       return;
-    }
+      }
 
-    try {
+      if (!formData.categoria) {
+        toast({ 
+          title: "Error de validación", 
+          description: "La categoría es obligatoria", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.monto || formData.monto <= 0) {
+        toast({ 
+          title: "Error de validación", 
+          description: "El monto debe ser mayor a cero", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!formData.fecha) {
+        toast({ 
+          title: "Error de validación", 
+          description: "La fecha es obligatoria", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      const esSalario = formData.categoria === 'salarios';
+      const esSalarioManual = esSalario && formData.personalId === "N/A";
+
+      if (esSalario && !formData.personalId) {
+        toast({ 
+          title: "Error de validación", 
+          description: "Por favor, selecciona un empleado o 'N/A (Registrar salario manual)'", 
+          variant: "destructive" 
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        descripcion: formData.descripcion.trim(),
+        categoria: formData.categoria,
+        monto: Number(formData.monto),
+        fecha: formData.fecha,
+        vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId,
+        personalId: formData.personalId === "N/A" ? null : formData.personalId,
+      };
+
+      console.log("📤 Enviando payload:", payload);
+
+      // Obtener headers con autenticación
+      const headers = await getAuthHeaders();
+      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gastos/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.message || "No se pudo actualizar el gasto");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "No se pudo actualizar el gasto");
       }
 
-      toast({ title: "¡Actualizado!", description: "El gasto se ha guardado correctamente." });
-      router.push("/dashboard/propietario/gastos");
+      toast({ 
+        title: "¡Actualizado!", 
+        description: "El gasto se ha guardado correctamente." 
+      });
+      
+      // Redirigir después de un breve delay
+      setTimeout(() => {
+        router.push("/dashboard/propietario/gastos");
+      }, 1000);
 
     } catch (err: any) {
-      toast({ title: "Error al guardar", description: (err as Error).message, variant: "destructive" });
+      console.error("Error al guardar:", err);
+      toast({ 
+        title: "Error al guardar", 
+        description: err.message, 
+        variant: "destructive" 
+      });
     } finally {
       setLoading(false);
     }
@@ -201,7 +303,10 @@ export default function EditarGastoPage() {
   if (loadingData) {
     return (
       <DashboardLayout title="Editar Gasto" menuItems={menuItems}>
-        <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="ml-2">Cargando datos del gasto...</span>
+        </div>
       </DashboardLayout>
     );
   }
@@ -236,7 +341,7 @@ export default function EditarGastoPage() {
                   value={formData.descripcion || ''} 
                   onChange={handleChange} 
                   required 
-                  disabled={esSalario && !esSalarioManual} // Deshabilitado si es salario automático
+                  disabled={loading || (esSalario && !esSalarioManual)}
                 />
               </div>
 
@@ -244,12 +349,14 @@ export default function EditarGastoPage() {
                 <div className="space-y-2">
                   <Label htmlFor="categoria">Categoría *</Label>
                   <Select 
-                    name="categoria" 
                     value={formData.categoria || ''} 
                     onValueChange={(value) => handleSelectChange("categoria", value)}
                     required
+                    disabled={loading}
                   >
-                    <SelectTrigger><SelectValue placeholder="Selecciona una categoría" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona una categoría" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="combustible">Combustible</SelectItem>
                       <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
@@ -261,16 +368,15 @@ export default function EditarGastoPage() {
                  <div className="space-y-2">
                   <Label htmlFor="vehiculoId">Asignar Vehículo</Label>
                   <Select 
-                    name="vehiculoId"
                     value={formData.vehiculoId || 'N/A'} 
                     onValueChange={(value) => handleSelectChange("vehiculoId", value)}
-                    disabled={esSalario}
+                    disabled={loading || esSalario}
                   >
-                    <SelectTrigger><SelectValue placeholder="Asignar a un vehículo" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Asignar a un vehículo" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="N/A">N/A (Gasto General)</SelectItem>
-                      {/* --- ARREGLADO --- */}
-                      {/* {vehiculos.length === 0 && <SelectItem value="" disabled>Cargando...</SelectItem>} */}
                       {vehiculos.map(v => (
                         <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
                       ))}
@@ -282,22 +388,23 @@ export default function EditarGastoPage() {
                 </div>
               </div>
 
-              {/* --- BLOQUE CONDICIONAL PARA SALARIOS (SIN CUADRO) --- */}
               {esSalario && (
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="personalId">Asignar Empleado *</Label>
                   <Select 
-                    name="personalId" 
                     value={formData.personalId || "N/A"} 
                     onValueChange={(value) => handleSelectChange("personalId", value)}
+                    disabled={loading}
                   >
-                    <SelectTrigger><SelectValue placeholder="Selecciona un empleado" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un empleado" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="N/A">N/A (Registrar salario manual)</SelectItem>
-                      {/* --- ARREGLADO --- */}
-                      {/* {personal.length === 0 && <SelectItem value="" disabled>Cargando personal...</SelectItem>} */}
                       {personal.map(p => (
-                        <SelectItem key={p.id} value={p.id}>{p.nombre} (Salario: C${formatCurrency(p.salario || 0)})</SelectItem>
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.nombre} (Salario: C${formatCurrency(p.salario || 0)})
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -316,7 +423,7 @@ export default function EditarGastoPage() {
                     value={formData.monto || ''} 
                     onChange={handleChange} 
                     required 
-                    disabled={esSalario && !esSalarioManual} // Deshabilitado si es salario automático
+                    disabled={loading || (esSalario && !esSalarioManual)}
                   />
                    {esSalario && !esSalarioManual && (
                     <p className="text-xs text-muted-foreground">El monto se toma automáticamente del salario del empleado.</p>
@@ -331,17 +438,29 @@ export default function EditarGastoPage() {
                     value={formData.fecha || ''} 
                     onChange={handleChange} 
                     required 
+                    disabled={loading}
                   />
                 </div>
               </div>
 
               <div className="flex gap-3 pt-4">
                 <Button type="submit" disabled={loading}>
-                  <Save className="h-4 w-4 mr-2" />
-                  {loading ? "Guardando..." : "Guardar Cambios"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Guardar Cambios
+                    </>
+                  )}
                 </Button>
                 <Link href="/dashboard/propietario/gastos">
-                  <Button type="button" variant="outline">Cancelar</Button>
+                  <Button type="button" variant="outline" disabled={loading}>
+                    Cancelar
+                  </Button>
                 </Link>
               </div>
             </form>

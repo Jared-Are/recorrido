@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,18 +31,23 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 
-// --- TIPO PARA EL VEHÍCULO CARGADO ---
+// --- TIPOS ---
 type Vehiculo = {
   id: string;
   nombre: string;
   capacidad?: number;
 };
 
-// --- DEFINICIÓN DEL TIPO ALUMNO (FLEXIBLE) ---
 type AlumnoFromAPI = {
   id: string;
   nombre: string;
-  tutor: any; // Puede ser string u objeto
+  tutor: any; 
+  tutorUser?: {
+    nombre: string;
+    telefono: string;
+    email?: string;
+  };
+  contacto?: string;
   grado: string;
   direccion: string;
   activo: boolean;
@@ -50,7 +56,6 @@ type AlumnoFromAPI = {
   vehiculo?: Vehiculo; 
 };
 
-// --- TIPO PARA ALUMNO NORMALIZADO ---
 type AlumnoNormalizado = {
   id: string;
   nombre: string;
@@ -66,92 +71,41 @@ type AlumnoNormalizado = {
   vehiculo?: Vehiculo; 
 };
 
-// --- DEFINICIÓN DEL MENÚ ---
+// --- MENÚ ---
 const menuItems: MenuItem[] = [
-  {
-    title: "Gestionar Alumnos",
-    description: "Ver y administrar estudiantes",
-    icon: Users,
-    href: "/dashboard/propietario/alumnos",
-    color: "text-blue-600",
-    bgColor: "bg-blue-50 dark:bg-blue-900/20",
-  },
-  {
-    title: "Gestionar Pagos",
-    description: "Ver historial y registrar pagos",
-    icon: DollarSign,
-    href: "/dashboard/propietario/pagos",
-    color: "text-green-600",
-    bgColor: "bg-green-50 dark:bg-green-900/20",
-  },
-  {
-    title: "Gestionar Gastos",
-    description: "Control de combustible, salarios, etc.",
-    icon: TrendingDown,
-    href: "/dashboard/propietario/gastos",
-    color: "text-pink-600",
-    bgColor: "bg-pink-50 dark:bg-pink-900/20",
-  },
-  {
-    title: "Gestionar Personal",
-    description: "Administrar empleados y choferes",
-    icon: Users,
-    href: "/dashboard/propietario/personal",
-    color: "text-purple-600",
-    bgColor: "bg-purple-50 dark:bg-purple-900/20",
-  },
-  {
-    title: "Gestionar Vehículos",
-    description: "Administrar flota de vehículos",
-    icon: Bus,
-    href: "/dashboard/propietario/vehiculos",
-    color: "text-orange-600",
-    bgColor: "bg-orange-50 dark:bg-orange-900/20",
-  },
-  {
-    title: "Gestionar Usuarios",
-    description: "Administrar accesos al sistema",
-    icon: UserCog,
-    href: "/dashboard/propietario/usuarios",
-    color: "text-indigo-600",
-    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
-  },
-  {
-    title: "Enviar Avisos",
-    description: "Comunicados a tutores y personal",
-    icon: Bell,
-    href: "/dashboard/propietario/avisos",
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
-  },
-  {
-    title: "Generar Reportes",
-    description: "Estadísticas y análisis",
-    icon: BarChart3,
-    href: "/dashboard/propietario/reportes",
-    color: "text-red-600",
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-  },
+  { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
+  { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
+  { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
+  { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
+  { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
+  { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
+  { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
+  { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
 ];
 
-// Helper de formato de moneda
 const formatCurrency = (num: number) => {
   return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// --- FUNCIÓN PARA NORMALIZAR LOS DATOS DEL TUTOR ---
+// --- NORMALIZACIÓN ---
 const normalizarAlumno = (alumno: AlumnoFromAPI): AlumnoNormalizado => {
   let tutorNombre = "N/A";
   let tutorTelefono = "N/A";
 
-  // Verificar diferentes estructuras posibles del tutor
-  if (typeof alumno.tutor === 'string') {
-    // Si el tutor es un string directo
-    tutorNombre = alumno.tutor;
-  } else if (alumno.tutor && typeof alumno.tutor === 'object') {
-    // Si el tutor es un objeto
+  if (alumno.tutorUser) {
+    tutorNombre = alumno.tutorUser.nombre;
+    tutorTelefono = alumno.tutorUser.telefono;
+  } 
+  else if (alumno.tutor && typeof alumno.tutor === 'object') {
     tutorNombre = alumno.tutor.nombre || "N/A";
     tutorTelefono = alumno.tutor.telefono || "N/A";
+  }
+  else if (typeof alumno.tutor === 'string') {
+    tutorNombre = alumno.tutor;
+  }
+
+  if (tutorTelefono === "N/A" && alumno.contacto) {
+    tutorTelefono = alumno.contacto;
   }
 
   return {
@@ -175,26 +129,24 @@ export default function AlumnosPage() {
   const [estadoFilter, setEstadoFilter] = useState("activo"); 
   const [sortOption, setSortOption] = useState("grado-asc"); 
 
-  // --- OBTENER DATOS DE LA API (ALUMNOS Y VEHÍCULOS) ---
+  // --- OBTENER DATOS ---
   const fetchDatos = async () => {
     setLoading(true);
     setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error("Sesión no válida o expirada.");
+      
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
       const [alumnosRes, vehiculosRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos?estado=${estadoFilter}`, { headers }), 
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers })
+        fetch(`${apiUrl}/alumnos?estado=${estadoFilter}`, { headers }), 
+        fetch(`${apiUrl}/vehiculos?estado=activo`, { headers })
       ]);
 
-      // Manejo mejorado de errores y tablas vacías
       if (!alumnosRes.ok) {
         if (alumnosRes.status === 404 || alumnosRes.status === 204) {
           setAlumnos([]);
@@ -204,21 +156,16 @@ export default function AlumnosPage() {
         }
       } else {
         const alumnosData: AlumnoFromAPI[] = await alumnosRes.json();
-        
-        // CORREGIDO: Normalizar los datos del tutor
         const alumnosNormalizados = alumnosData.map(normalizarAlumno);
-        
-        console.log("Alumnos normalizados:", alumnosNormalizados); // Para debugging
         setAlumnos(alumnosNormalizados);
       }
       
-      // Manejo de vehículos
       if (!vehiculosRes.ok) {
         if (vehiculosRes.status === 404 || vehiculosRes.status === 204) {
           setVehiculos([]);
         } else {
-          const errorData = await vehiculosRes.json().catch(() => ({}));
-          throw new Error(errorData.message || `Error al cargar vehículos (${vehiculosRes.status})`);
+          console.error("Error cargando vehículos");
+          setVehiculos([]);
         }
       } else {
         const vehiculosData: Vehiculo[] = await vehiculosRes.json();
@@ -243,7 +190,6 @@ export default function AlumnosPage() {
 
   // --- LÓGICA DE FILTRADO Y ORDEN ---
   const filteredAlumnos = useMemo(() => { 
-    
     const gradoToNumber = (grado: string) => {
       const parts = grado.split(' ');
       if (parts.length < 2) return 99;
@@ -257,23 +203,21 @@ export default function AlumnosPage() {
 
     let alumnosFiltrados = [...alumnos];
 
-    // 1. Filtrar por Vehículo
     if (selectedVehiculo !== "todos") {
       alumnosFiltrados = alumnosFiltrados.filter(a => a.vehiculoId === selectedVehiculo);
     }
     
-    // 2. Filtrar por Término de Búsqueda
     if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
       alumnosFiltrados = alumnosFiltrados.filter(
         (alumno) =>
-          alumno.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          alumno.tutor.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          alumno.tutor.telefono.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (alumno.direccion && alumno.direccion.toLowerCase().includes(searchTerm.toLowerCase()))
+          alumno.nombre.toLowerCase().includes(lowerTerm) ||
+          alumno.tutor.nombre.toLowerCase().includes(lowerTerm) ||
+          alumno.tutor.telefono.toLowerCase().includes(lowerTerm) ||
+          (alumno.direccion && alumno.direccion.toLowerCase().includes(lowerTerm))
       );
     }
 
-    // --- 3. APLICAR ORDEN ---
     switch (sortOption) {
       case 'grado-asc':
         alumnosFiltrados.sort((a, b) => gradoToNumber(a.grado) - gradoToNumber(b.grado));
@@ -306,94 +250,14 @@ export default function AlumnosPage() {
     return alumnosFiltrados;
   }, [alumnos, searchTerm, selectedVehiculo, sortOption]); 
 
-  // --- BORRADO LÓGICO (DESACTIVAR) ---
-  const cambiarEstadoAlumno = async (id: string, nuevoEstado: "activo" | "inactivo") => {
-    const alumno = alumnos.find(a => a.id === id);
-    if (!alumno) return;
-
-    const confirmMessage = nuevoEstado === 'inactivo' 
-      ? `¿Estás seguro de DESACTIVAR a ${alumno.nombre}? (Se moverá a 'Inactivos')` 
-      : `¿Estás seguro de REACTIVAR a ${alumno.nombre}? (Se moverá a 'Activos')`;
-      
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("Sesión no válida.");
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, {
-        method: 'PATCH',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({ activo: nuevoEstado === 'activo' }), 
-      });
-
-      if (!response.ok) {
-        throw new Error("No se pudo actualizar el estado del alumno");
-      }
-      
-      setAlumnos(prev => prev.filter(a => a.id !== id)); 
-
-      let mensaje = "";
-      if (nuevoEstado === "inactivo") mensaje = "Alumno desactivado correctamente";
-      if (nuevoEstado === "activo") mensaje = "Alumno activado correctamente";
-      
-      toast({
-        title: "Estado actualizado",
-        description: `${mensaje}: ${alumno?.nombre}`,
-      });
-
-    } catch (err: any) {
-      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
-    }
-  }
-
-  // --- BORRADO FÍSICO (ELIMINAR PERMANENTEMENTE) ---
-  const handleDelete = async (id: string) => {
-    const alumno = alumnos.find(a => a.id === id);
-    if (!alumno) return;
-
-    if (window.confirm(`¿Estás SEGURO de ELIMINAR PERMANENTEMENTE a ${alumno.nombre}? Esta acción no se puede deshacer.`)) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        if (!response.ok) {
-          throw new Error("No se pudo eliminar el alumno.");
-        }
-
-        setAlumnos(prev => prev.filter((a) => a.id !== id));
-        toast({
-          title: "Alumno Eliminado",
-          description: "El alumno ha sido eliminado permanentemente.",
-        });
-
-      } catch (err: any) {
-        toast({
-          title: "Error al eliminar",
-          description: (err as Error).message,
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  // --- LÓGICA DE TARJETA DE RESUMEN ---
+  // --- CÁLCULOS DE RESUMEN ---
   const cardInfo = useMemo(() => {
     const totalAlumnos = filteredAlumnos.length;
-    
     let totalCapacidad = 0;
     let descripcionCapacidad = "Capacidad Total (Activos)";
+    
+    // Cálculo de ingresos
+    const totalIngresos = filteredAlumnos.reduce((sum, alumno) => sum + (alumno.precio || 0), 0);
 
     if (selectedVehiculo === 'todos') {
       totalCapacidad = vehiculos.reduce((sum, v) => sum + (v.capacidad || 0), 0);
@@ -403,14 +267,75 @@ export default function AlumnosPage() {
       descripcionCapacidad = `Capacidad en ${vehiculo?.nombre || 'Vehículo'}`;
     }
     
-    return { 
-      totalAlumnos, 
-      totalCapacidad,
-      descripcionCapacidad
-    };
+    return { totalAlumnos, totalCapacidad, descripcionCapacidad, totalIngresos };
   }, [selectedVehiculo, filteredAlumnos, vehiculos, estadoFilter]);
 
-  // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
+  // --- ACCIONES ---
+  const cambiarEstadoAlumno = async (id: string, nuevoEstado: "activo" | "inactivo") => {
+    const alumno = alumnos.find(a => a.id === id);
+    if (!alumno) return;
+
+    const confirmMessage = nuevoEstado === 'inactivo' 
+      ? `¿Estás seguro de DESACTIVAR a ${alumno.nombre}? (Se moverá a 'Inactivos')` 
+      : `¿Estás seguro de REACTIVAR a ${alumno.nombre}? (Se moverá a 'Activos')`;
+      
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const headers: any = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/alumnos/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ activo: nuevoEstado === 'activo' }), 
+      });
+
+      if (!response.ok) throw new Error("No se pudo actualizar el estado");
+      
+      setAlumnos(prev => prev.filter(a => a.id !== id)); 
+
+      toast({
+        title: "Estado actualizado",
+        description: `Alumno ${nuevoEstado} correctamente.`,
+      });
+
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    const alumno = alumnos.find(a => a.id === id);
+    if (!alumno) return;
+
+    if (window.confirm(`¿Estás SEGURO de ELIMINAR PERMANENTEMENTE a ${alumno.nombre}?`)) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const headers: any = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        
+        const response = await fetch(`${apiUrl}/alumnos/${id}`, {
+          method: 'DELETE',
+          headers,
+        });
+
+        if (!response.ok) throw new Error("No se pudo eliminar.");
+
+        setAlumnos(prev => prev.filter((a) => a.id !== id));
+        toast({ title: "Alumno Eliminado" });
+
+      } catch (err: any) {
+        toast({ title: "Error al eliminar", description: err.message, variant: "destructive" });
+      }
+    }
+  };
+
   if (loading) {
     return (
       <DashboardLayout title="Gestión de Alumnos" menuItems={menuItems}>
@@ -437,13 +362,13 @@ export default function AlumnosPage() {
     );
   }
 
-  // --- RENDERIZADO PRINCIPAL ---
   return (
     <DashboardLayout title="Gestión de Alumnos" menuItems={menuItems}>
       <div className="space-y-6">
         
         {/* --- TARJETAS DE RESUMEN --- */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Tarjeta 1: Total Alumnos */}
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="text-xs">
@@ -454,12 +379,26 @@ export default function AlumnosPage() {
               <div className="text-2xl font-bold">{cardInfo.totalAlumnos}</div>
             </CardContent>
           </Card>
+
+          {/* Tarjeta 2: Capacidad */}
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="text-xs">{cardInfo.descripcionCapacidad}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">{cardInfo.totalCapacidad}</div>
+            </CardContent>
+          </Card>
+
+          {/* Tarjeta 3: Ingresos Mensuales Estimados (NUEVA) */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="text-xs">
+                Ingreso Mensual Estimado
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">C${formatCurrency(cardInfo.totalIngresos)}</div>
             </CardContent>
           </Card>
         </div>
@@ -489,7 +428,7 @@ export default function AlumnosPage() {
             </Select>
             <Select onValueChange={setEstadoFilter} value={estadoFilter}>
               <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Filtrar por estado" />
+                <SelectValue placeholder="Estado" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="activo">Activos</SelectItem>
@@ -498,18 +437,13 @@ export default function AlumnosPage() {
             </Select>
             <Select onValueChange={setSortOption} defaultValue="grado-asc">
               <SelectTrigger className="w-full sm:w-[190px]">
-                <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Ordenar por" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="grado-asc">Grado (Ascendente)</SelectItem>
-                <SelectItem value="grado-desc">Grado (Descendente)</SelectItem>
+                <SelectItem value="grado-asc">Grado (Asc)</SelectItem>
                 <SelectItem value="nombre-asc">Nombre (A-Z)</SelectItem>
-                <SelectItem value="nombre-desc">Nombre (Z-A)</SelectItem>
                 <SelectItem value="tutor-asc">Tutor (A-Z)</SelectItem>
-                <SelectItem value="tutor-desc">Tutor (Z-A)</SelectItem>
-                <SelectItem value="precio-asc">Precio (Menor a Mayor)</SelectItem>
-                <SelectItem value="precio-desc">Precio (Mayor a Menor)</SelectItem>
+                <SelectItem value="precio-asc">Precio (Asc)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -523,32 +457,26 @@ export default function AlumnosPage() {
           </div>
         </div>
 
-        {/* --- TABLA O MENSAJE DE VACÍO --- */}
+        {/* --- TABLA --- */}
         {alumnos.length === 0 ? (
           <Card className="mt-6 border-l-4 border-l-blue-500">
             <CardHeader>
               <CardTitle>¡Comencemos a trabajar!</CardTitle>
               <CardDescription>
-                No tienes alumnos registrados en la base de datos (o no se encontraron con el filtro "{estadoFilter}").
+                No tienes alumnos registrados con el filtro "{estadoFilter}".
               </CardDescription>
             </CardHeader>
             <CardContent>
               <Link href="/dashboard/propietario/alumnos/nuevo">
                 <Button>
-                  <Plus className="h-4 w-4 mr-2" /> Registrar el Primer Alumno
+                  <Plus className="h-4 w-4 mr-2" /> Registrar Alumno
                 </Button>
               </Link>
             </CardContent>
           </Card>
         ) : (
           <Card>
-            <CardHeader>
-              <CardTitle>Alumnos ({estadoFilter === 'activo' ? 'Activos' : 'Inactivos'})</CardTitle>
-              <CardDescription>
-                Gestiona los estudiantes registrados en el sistema.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -557,68 +485,43 @@ export default function AlumnosPage() {
                       <TableHead>Tutor</TableHead>
                       <TableHead>Contacto Tutor</TableHead>
                       <TableHead>Grado</TableHead>
-                      <TableHead>Vehículo Asignado</TableHead>
+                      <TableHead>Vehículo</TableHead>
                       <TableHead>Precio</TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAlumnos.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center h-24">
-                          No se encontraron alumnos con esos filtros.
+                    {filteredAlumnos.map((alumno) => (
+                      <TableRow key={alumno.id}>
+                        <TableCell className="font-medium whitespace-nowrap">{alumno.nombre}</TableCell>
+                        <TableCell className="whitespace-nowrap">{alumno.tutor.nombre}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                            {alumno.tutor.telefono !== "N/A" ? (
+                                <span>{alumno.tutor.telefono}</span>
+                            ) : (
+                                <span className="text-gray-400 italic">N/A</span>
+                            )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{alumno.grado}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="outline">{alumno.vehiculo?.nombre || "Sin asignar"}</Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">C${formatCurrency(alumno.precio ?? 0)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Link href={`/dashboard/propietario/alumnos/${alumno.id}`}>
+                              <Button variant="ghost" size="icon"><Pencil className="h-4 w-4" /></Button>
+                            </Link>
+                            <Button variant="ghost" size="icon" onClick={() => cambiarEstadoAlumno(alumno.id, alumno.activo ? "inactivo" : "activo")}>
+                                {alumno.activo ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(alumno.id)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
-                    ) : (
-                      filteredAlumnos.map((alumno) => (
-                        <TableRow key={alumno.id}>
-                          <TableCell className="font-medium whitespace-nowrap">{alumno.nombre}</TableCell>
-                          <TableCell className="whitespace-nowrap">{alumno.tutor.nombre}</TableCell>
-                          <TableCell className="whitespace-nowrap">{alumno.tutor.telefono}</TableCell>
-                          <TableCell className="whitespace-nowrap">{alumno.grado}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <Badge variant="outline">{alumno.vehiculo?.nombre || "Sin asignar"}</Badge>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">C${formatCurrency(alumno.precio ?? 0)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Link href={`/dashboard/propietario/alumnos/${alumno.id}`}>
-                                <Button variant="ghost" size="icon" title="Editar">
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              {alumno.activo ? (
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
-                                  title="Desactivar (Mover a Inactivos)"
-                                  onClick={() => cambiarEstadoAlumno(alumno.id, "inactivo")}
-                                >
-                                  <EyeOff className="h-4 w-4" />
-                                </Button>
-                              ) : (
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
-                                  title="Activar (Mover a Activos)"
-                                  onClick={() => cambiarEstadoAlumno(alumno.id, "activo")}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              )}
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                title="Eliminar Permanentemente"
-                                onClick={() => handleDelete(alumno.id)} 
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
+                    ))}
                   </TableBody>
                 </Table>
               </div>

@@ -1,19 +1,20 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
+// 👇 Asegúrate de que la ruta al layout sea correcta
 import { AsistenteLayout } from "@/components/asistente-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // <--- IMPORTANTE
+import { supabase } from "@/lib/supabase"; 
 import { 
   CheckCircle2, 
   Loader2, 
   User, 
   Search, 
   XCircle, 
-  Check 
+  Check
 } from "lucide-react";
 
 type AlumnoAsistencia = {
@@ -35,39 +36,75 @@ export default function RegistrarAsistenciaPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
-  // 1. Cargar alumnos
+  // 🛡️ REF PARA EVITAR DOBLE TOAST EN MODO DEV
+  const toastShownRef = useRef(false);
+
+  // 1. Cargar datos y validar estado
   useEffect(() => {
-    const fetchAlumnosDelDia = async () => {
-      setLoading(true);
+    const init = async () => {
+      // No seteamos loading(true) aquí porque ya inicia en true
       try {
-        // OBTENER TOKEN
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) throw new Error("Sesión no válida o expirada.");
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/alumnos-del-dia`, {
-            headers: {
-                'Authorization': `Bearer ${token}`, // <--- CABECERA DE AUTORIZACIÓN
-                'Content-Type': 'application/json'
+        const headers = {
+             'Authorization': `Bearer ${token}`,
+             'Content-Type': 'application/json'
+        };
+
+        // --- PASO A: VALIDACIÓN DE SEGURIDAD ---
+        const resResumen = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/resumen-hoy`, { headers });
+        
+        if (resResumen.ok) {
+            const dataResumen = await resResumen.json();
+            
+            // SI YA SE REGISTRÓ:
+            if (dataResumen.asistenciaRegistrada) {
+                if (!toastShownRef.current) {
+                    toastShownRef.current = true; // Marcamos que ya avisamos
+                    toast({ 
+                        title: "¡Tarea completada!", 
+                        description: "La asistencia de hoy ya fue registrada.",
+                        variant: "default",
+                        duration: 4000
+                    });
+                    router.push("/dashboard/asistente"); 
+                }
+                // ⚠️ IMPORTANTE: NO ponemos setLoading(false) aquí.
+                // Dejamos que el spinner siga girando hasta que el router cambie de página.
+                return; 
             }
-        });
+        }
+
+        // --- PASO B: CARGAR LISTA (Solo si no se ha registrado) ---
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/alumnos-del-dia`, { headers });
         
         if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
-          throw new Error(errorData?.message || "No se puede registrar asistencia hoy.");
+           // Si el backend responde error, ahí sí permitimos mostrar la UI (o error)
+           throw new Error("Error al cargar la lista.");
         }
         
         const data: AlumnoAsistencia[] = await response.json();
+        
+        if (data.length === 0) {
+             if (!toastShownRef.current) {
+                toast({ title: "Sin alumnos", description: "No hay alumnos asignados para hoy.", variant: "default" });
+             }
+        }
+
         setAlumnos(data);
+        setLoading(false); // Solo quitamos el loading si ÉXITO y NO redirigimos
 
       } catch (err: any) {
-        toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
-        // router.push("/dashboard/asistente"); // Comentar o cambiar a un aviso si quieres mantener el flujo
-      } finally {
+        // Si hay error real (red, etc), mostramos el error y quitamos loading
+        console.error(err);
+        toast({ title: "Aviso", description: "No se pudo verificar el estado de la asistencia." });
         setLoading(false);
       }
     };
-    fetchAlumnosDelDia();
+
+    init();
   }, [toast, router]);
 
   // 2. Filtrar alumnos por búsqueda
@@ -90,7 +127,7 @@ export default function RegistrarAsistenciaPage() {
     setIsConfirmOpen(true);
   };
 
-  // 5. Enviar datos al backend (CORREGIDO)
+  // 5. Enviar datos al backend
   const handleConfirmGuardar = async () => {
     setIsConfirmOpen(false);
     setSending(true);
@@ -104,15 +141,14 @@ export default function RegistrarAsistenciaPage() {
     const payload = { registros };
 
     try {
-      // OBTENER TOKEN PARA EL ENVÍO
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error("Sesión no válida."); // <-- Validación de Token
+      if (!token) throw new Error("Sesión no válida.");
       
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/registrar-lote`, {
         method: 'POST',
         headers: { 
-            'Authorization': `Bearer ${token}`, // <--- ¡AQUÍ ESTABA EL FALLO!
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json' 
         },
         body: JSON.stringify(payload)
@@ -120,10 +156,14 @@ export default function RegistrarAsistenciaPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.message.toString() || `No se pudo guardar la asistencia. Código: ${response.status}`);
+        throw new Error(errorData?.message || "No se pudo guardar.");
       }
 
       const presentes = alumnos.length - ausentes.length;
+      
+      // Evitar doble toast al salir
+      toastShownRef.current = true; 
+      
       toast({
         title: "Asistencia guardada",
         description: `Asistieron ${presentes} de ${alumnos.length} alumnos.`,
@@ -132,7 +172,6 @@ export default function RegistrarAsistenciaPage() {
 
     } catch (err: any) {
       toast({ title: "Error al guardar", description: (err as Error).message, variant: "destructive" });
-    } finally {
       setSending(false);
     }
   };
@@ -140,9 +179,9 @@ export default function RegistrarAsistenciaPage() {
   if (loading) {
     return (
       <AsistenteLayout title="Registrar Asistencia">
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-          <p className="ml-4 text-muted-foreground">Cargando lista de alumnos...</p>
+        <div className="flex flex-col justify-center items-center h-[60vh]">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+          <p className="text-muted-foreground text-lg animate-pulse">Verificando ruta del día...</p>
         </div>
       </AsistenteLayout>
     );
