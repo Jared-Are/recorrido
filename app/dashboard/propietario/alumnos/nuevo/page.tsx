@@ -1,46 +1,67 @@
 "use client";
 
-import type React from "react";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react"; 
 import { useRouter } from "next/navigation";
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
 import { Button } from "@/components/ui/button";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import { 
-    ArrowLeft, 
-    Save, 
-    Trash2, 
-    Plus,
-    Users, 
-    DollarSign, 
-    Bus, 
-    UserCog, 
-    Bell, 
-    BarChart3, 
-    TrendingDown,
-    Loader2
-} from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, Save, Trash2, Plus, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { z } from "zod"; 
 
-// --- DEFINICIÓN DEL MENÚ ---
+// --- 1. DEFINICIÓN DE REGLAS DE NEGOCIO (ZOD) ---
+const nombreRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
+const direccionRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]+$/;
+
+// NUEVA REGLA: 8 dígitos, y el primero debe ser 5, 7 u 8.
+const telefonoNicaRegex = /^[578][0-9]{7}$/; 
+
+const alumnoSchema = z.object({
+    nombre: z.string()
+        .min(3, "El nombre del alumno es muy corto (mínimo 3 letras).")
+        .max(60, "El nombre no puede tener más de 60 caracteres.")
+        .regex(nombreRegex, "El nombre solo debe contener letras y espacios.")
+        .refine((val) => !/(.)\1\1/.test(val), "No puedes repetir la misma letra más de 2 veces seguidas.")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "El nombre debe comenzar con mayúscula."),
+    grado: z.string().min(1, "Debes seleccionar un grado."),
+    vehiculoId: z.string().min(1, "Debes asignar un vehículo."),
+});
+
+const formularioSchema = z.object({
+    ...alumnoSchema.shape,
+    tutorNombre: z.string()
+        .min(5, "El nombre del tutor debe ser completo (mínimo 5 letras).")
+        .max(60, "El nombre del tutor no puede exceder 60 caracteres.")
+        .regex(nombreRegex, "El nombre del tutor solo debe contener letras y espacios.")
+        .refine((val) => !/(.)\1\1/.test(val), "No puedes repetir la misma letra más de 2 veces seguidas.")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "El nombre debe comenzar con mayúscula."),
+    tutorTelefono: z.string()
+        .regex(telefonoNicaRegex, "El teléfono debe ser un celular válido (empieza con 5, 7 u 8) y tener 8 dígitos."),
+    direccion: z.string()
+        .min(10, "La dirección debe ser detallada (mínimo 10 caracteres).")
+        .regex(direccionRegex, "La dirección solo puede contener letras y números."),
+    precio: z.coerce.number()
+        .gt(700, "El precio mensual debe ser MAYOR a 700 C$.") 
+        .max(50000, "El precio excede el límite permitido."),
+});
+
+const hermanoSchema = z.object({
+    nombre: z.string()
+        .min(3, "Nombre de hermano muy corto.")
+        .regex(nombreRegex, "Solo letras.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repitas letras excesivamente.")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "Debe comenzar con mayúscula."),
+    grado: z.string().min(1, "Selecciona el grado."),
+    vehiculoId: z.string().min(1, "Selecciona el vehículo."),
+});
+
+// --- MENÚ ---
 const menuItems: MenuItem[] = [
     { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20", },
     { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20", },
@@ -52,316 +73,209 @@ const menuItems: MenuItem[] = [
     { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20", },
 ];
 
-type Vehiculo = {
-    id: string;
-    nombre: string;
-};
+type Vehiculo = { id: string; nombre: string; };
 
 export default function NuevoAlumnoPage() {
     const router = useRouter();
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
-    
     const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-    const [vehiculosLoading, setVehiculosLoading] = useState(true);
-
+    
     const [formData, setFormData] = useState({
-        nombre: "",
-        tutorNombre: "",
-        tutorTelefono: "", 
-        grado: "",
-        direccion: "", 
-        vehiculoId: "", 
-        precio: "", 
+        nombre: "", tutorNombre: "", tutorTelefono: "", grado: "", direccion: "", vehiculoId: "", 
+        precio: "700", // <-- Valor por defecto 700
         hermanos: false,
     });
-
-    const [otrosHijos, setOtrosHijos] = useState<
-        { nombre: string; grado: string; vehiculoId: string }[] 
-    >([]);
+    const [otrosHijos, setOtrosHijos] = useState<{ nombre: string; grado: string; vehiculoId: string }[]>([]);
 
     useEffect(() => {
         const fetchVehiculos = async () => {
-            setVehiculosLoading(true);
             try {
                 const { data: { session } } = await supabase.auth.getSession();
                 const token = session?.access_token;
-                if (!token) throw new Error("Sesión no válida.");
-    
-                const headers = {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                };
-                
+                if (!token) return; 
+                const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
                 const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers });
-                
-                if (response.ok) {
-                    const data: Vehiculo[] = await response.json();
-                    setVehiculos(data);
-                }
-            } catch (err: any) {
-                console.error("Error al cargar vehículos:", err);
-            } finally {
-                setVehiculosLoading(false);
-            }
+                if (response.ok) { const data = await response.json(); setVehiculos(data); }
+            } catch (err) { console.error("Error vehículos", err); }
         };
         fetchVehiculos();
-    }, [toast]);
+    }, []);
 
-    const agregarHijo = () => {
-        setOtrosHijos([...otrosHijos, { nombre: "", grado: "", vehiculoId: "" }]); 
+    const calcularPrecios = (total: number, cant: number) => {
+        const base = Math.floor(total / cant);
+        const resto = total % cant;
+        const p = Array(cant).fill(base);
+        p[0] += resto; return p;
     };
 
-    const eliminarHijo = (index: number) => {
-        const nuevos = [...otrosHijos];
-        nuevos.splice(index, 1);
-        setOtrosHijos(nuevos);
-    };
-
-    const handleChangeHijo = (index: number, field: "nombre" | "grado" | "vehiculoId", value: string) => {
-        const nuevos = [...otrosHijos];
-        nuevos[index][field] = value;
-        setOtrosHijos(nuevos);
-    };
-
-    // --- CÁLCULO INTERNO DE PRECIOS (El usuario no ve esto, solo ve el total) ---
-    const calcularPreciosIndividuales = (totalFamiliar: number, totalHijos: number) => {
-        const base = Math.floor(totalFamiliar / totalHijos);
-        const resto = totalFamiliar % totalHijos;
-        const precios = Array(totalHijos).fill(base);
-        precios[0] += resto; // Ajustamos los centavos en el primer hijo
-        return precios;
+    // Helper para capitalizar palabras (Title Case)
+    const toTitleCase = (str: string) => {
+        return str.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-
-        const precioFamiliar = Number(formData.precio);
-        if (precioFamiliar <= 0) {
-            toast({ title: "Error", description: "El precio familiar debe ser mayor a cero.", variant: "destructive" });
-            setLoading(false);
-            return;
-        }
-
-        // Lista completa de alumnos a registrar
-        const listaHijos = [
-            { nombre: formData.nombre, grado: formData.grado, vehiculoId: formData.vehiculoId },
-            ...otrosHijos.filter((h) => h.nombre.trim() !== ""),
-        ];
-        
-        // Distribuimos el precio internamente
-        const preciosDistribuidos = calcularPreciosIndividuales(precioFamiliar, listaHijos.length);
-
-        if (!formData.tutorNombre.trim() || !formData.tutorTelefono.trim() || !formData.direccion.trim()) {
-            toast({ title: "Faltan datos", description: "Nombre, teléfono y dirección son obligatorios.", variant: "destructive" });
-            setLoading(false);
-            return;
-        }
-
-        if (listaHijos.some(a => !a.vehiculoId || a.vehiculoId === "placeholder-value")) {
-             toast({ title: "Falta Vehículo", description: "Asigna un vehículo a cada alumno.", variant: "destructive" });
-             setLoading(false);
-             return;
-        }
-
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const token = session?.access_token;
-            if (!token) throw new Error("Sesión no válida.");
+            const valid = formularioSchema.parse(formData); // Validación final estricta
 
-            const headers = { 
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            };
-
-            // 🚀 SOLUCIÓN A LA "CONDICIÓN DE CARRERA"
-            // Usamos un bucle for...of para enviar uno por uno.
-            for (const [index, alumno] of listaHijos.entries()) {
-                
-                const payload = {
-                    nombre: alumno.nombre.trim(),
-                    grado: alumno.grado,
-                    tutor: { 
-                        nombre: formData.tutorNombre.trim(),
-                        telefono: formData.tutorTelefono.trim()
-                    },
-                    direccion: formData.direccion.trim(),
-                    vehiculoId: alumno.vehiculoId,
-                    precio: preciosDistribuidos[index], // Precio fraccionado
-                    activo: true, 
-                };
-
-                console.log(`Registrando ${index + 1}/${listaHijos.length}: ${payload.nombre}`);
-
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(payload),
-                });
-
-                if (!res.ok) {
-                    const errorData = await res.json().catch(() => ({}));
-                    throw new Error(errorData.message || `Error al registrar a ${alumno.nombre}`);
-                }
+            if (formData.hermanos) {
+                if (otrosHijos.length === 0) throw new Error("Marcaste hermanos pero la lista está vacía.");
+                otrosHijos.forEach((h, i) => { try { hermanoSchema.parse(h); } catch (e:any) { throw new Error(`Hermano ${i+1}: ${e.errors[0].message}`); } });
             }
 
-            toast({
-                title: "Familia Registrada",
-                description: `Se registraron ${listaHijos.length} alumnos correctamente.`,
-            });
+            const lista = [{ nombre: valid.nombre, grado: valid.grado, vehiculoId: valid.vehiculoId }, ...otrosHijos];
+            const precios = calcularPrecios(valid.precio, lista.length);
+            const { data: { session } } = await supabase.auth.getSession();
             
+            const headers = { 'Authorization': `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' };
+
+            for (const [i, al] of lista.entries()) {
+                const payload = {
+                    nombre: al.nombre.trim(), grado: al.grado, 
+                    tutor: { nombre: valid.tutorNombre.trim(), telefono: valid.tutorTelefono.trim() },
+                    direccion: valid.direccion.trim(), vehiculoId: al.vehiculoId, precio: precios[i], activo: true
+                };
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, { method: 'POST', headers, body: JSON.stringify(payload) });
+                if (!res.ok) throw new Error(`Falló registro de ${al.nombre}`);
+            }
+
+            toast({ title: "¡Éxito!", description: "Familia registrada correctamente.", className: "bg-green-600 text-white" });
             router.push("/dashboard/propietario/alumnos");
 
         } catch (err: any) {
-            console.error("Error en handleSubmit:", err);
-            toast({
-                title: "Error",
-                description: err.message,
-                variant: "destructive",
-            });
-        } finally {
-            setLoading(false);
-        }
+            toast({ title: "Error", description: err instanceof z.ZodError ? err.errors[0].message : err.message, variant: "destructive" });
+        } finally { setLoading(false); }
     };
 
     return (
         <DashboardLayout title="Registrar Alumno" menuItems={menuItems}>
             <div className="space-y-6">
-                <div className="flex justify-between">
-                    <Link href="/dashboard/propietario/alumnos">
-                        <Button variant="ghost" size="sm">
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Volver
-                        </Button>
-                    </Link>
-                </div>
-
+                <Link href="/dashboard/propietario/alumnos"><Button variant="ghost" size="sm"><ArrowLeft className="mr-2 h-4 w-4"/> Volver</Button></Link>
                 <Card>
-                    <CardHeader>
-                        <CardTitle>Nuevo Ingreso</CardTitle>
-                        <CardDescription>Registra al estudiante y su grupo familiar.</CardDescription>
-                    </CardHeader>
+                    <CardHeader><CardTitle>Ingreso de Nuevo Alumno</CardTitle><CardDescription>Registra estudiante y familia.</CardDescription></CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="nombre">Nombre del Alumno * (Hijo 1)</Label>
+                                    <Label>Nombre Alumno *</Label>
                                     <Input 
-                                        id="nombre" 
-                                        placeholder="Ej: Juan Pérez" 
                                         value={formData.nombre} 
-                                        onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} 
-                                        required 
+                                        placeholder="Ej: Juan Pablo"
+                                        onChange={(e) => { 
+                                            const val = e.target.value;
+                                            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                            if (/(.)\1\1/.test(val)) return; // Anti-spam repetición
+                                            
+                                            // Auto Capitalize
+                                            setFormData({...formData, nombre: toTitleCase(val)}); 
+                                        }} 
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="grado">Grado *</Label>
-                                    <Select value={formData.grado} onValueChange={(value) => setFormData({ ...formData, grado: value })}>
-                                        <SelectTrigger><SelectValue placeholder="Selecciona grado" /></SelectTrigger>
-                                        <SelectContent>
-                                            {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
-                                                <SelectItem key={g} value={g}>{g}</SelectItem>
-                                            ))}
-                                        </SelectContent>
+                                    <Label>Grado *</Label>
+                                    <Select value={formData.grado} onValueChange={(v)=>setFormData({...formData, grado: v})}>
+                                        <SelectTrigger><SelectValue placeholder="Grado"/></SelectTrigger>
+                                        <SelectContent>{["1° Preescolar","2° Preescolar","3° Preescolar","1° Primaria","2° Primaria","3° Primaria","4° Primaria","5° Primaria","6° Primaria"].map(g=><SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
                                     </Select>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="tutorNombre">Nombre del Tutor *</Label>
-                                    <Input id="tutorNombre" placeholder="Ej: María Pérez" value={formData.tutorNombre} onChange={(e) => setFormData({ ...formData, tutorNombre: e.target.value })} required />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="tutorTelefono">Teléfono del Tutor *</Label>
-                                    <Input id="tutorTelefono" type="tel" placeholder="Ej: 555-0123" value={formData.tutorTelefono} onChange={(e) => setFormData({ ...formData, tutorTelefono: e.target.value })} required />
-                                </div>
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label htmlFor="direccion">Dirección Completa *</Label>
-                                    <Input id="direccion" placeholder="Ej: Del palo de mango 2c al sur..." value={formData.direccion} onChange={(e) => setFormData({ ...formData, direccion: e.target.value })} required />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Vehículo Asignado *</Label>
-                                    <Select value={formData.vehiculoId} onValueChange={(value) => setFormData({ ...formData, vehiculoId: value })} required>
-                                        <SelectTrigger><SelectValue placeholder="Selecciona vehículo" /></SelectTrigger>
-                                        <SelectContent>
-                                            {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="precio" className="text-green-600 font-bold">Precio Mensual FAMILIAR (C$) *</Label>
+                                    <Label>Nombre Tutor *</Label>
                                     <Input 
-                                        id="precio" 
+                                        value={formData.tutorNombre} 
+                                        placeholder="Ej: Ricardo Leandro Martin Perez"
+                                        onChange={(e) => { 
+                                            const val = e.target.value;
+                                            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                            if (/(.)\1\1/.test(val)) return;
+
+                                            setFormData({...formData, tutorNombre: toTitleCase(val)}); 
+                                        }} 
+                                    />
+                                </div>
+                                
+                                {/* 🚀 VALIDACIÓN ESTRICTA TELÉFONO EN VIVO */}
+                                <div className="space-y-2">
+                                    <Label>Teléfono Tutor *</Label>
+                                    <Input type="tel" maxLength={8} value={formData.tutorTelefono} placeholder="Ej: 88888888"
+                                        onChange={(e) => {
+                                            let val = e.target.value.replace(/\D/g, ''); // Solo números
+                                            // Si quiere ser muy estricto y bloquear en vivo el primer dígito incorrecto:
+                                            if (val.length === 1 && !['5','7','8'].includes(val)) {
+                                                return; 
+                                            }
+                                            setFormData({...formData, tutorTelefono: val});
+                                        }} />
+                                    <p className="text-[10px] text-muted-foreground">8 dígitos. Debe iniciar con 5, 7 u 8.</p>
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label>Dirección *</Label>
+                                    <Input value={formData.direccion} placeholder="Direccion detallada ej: Calle Sacuanjoche 3 cuadras al sur media hacia arriba."
+                                        onChange={(e) => { if (/^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]*$/.test(e.target.value)) setFormData({...formData, direccion: e.target.value}); }} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Vehículo *</Label>
+                                    <Select value={formData.vehiculoId} onValueChange={(v)=>setFormData({...formData, vehiculoId: v})}>
+                                        <SelectTrigger><SelectValue placeholder="Vehículo"/></SelectTrigger>
+                                        <SelectContent>{vehiculos.map(v=><SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                </div>
+
+                                {/* 🚀 VALIDACIÓN PRECIO EN VIVO */}
+                                <div className="space-y-2">
+                                    <Label className="text-green-600 font-bold">Precio Familiar (C$) *</Label>
+                                    <Input 
                                         type="number" 
-                                        placeholder="Ej: 1500" 
                                         value={formData.precio} 
-                                        onChange={(e) => setFormData({ ...formData, precio: e.target.value })} 
-                                        required 
+                                        placeholder="Mínimo 700"
+                                        min={700} // Bloquea las flechitas hacia abajo de 700
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            // Permitimos borrar (string vacío) para editar, pero no negativos
+                                            if (val !== "" && Number(val) < 0) return; 
+                                            setFormData({...formData, precio: val});
+                                        }} 
                                         className="border-green-200 focus:ring-green-500"
                                     />
-                                    <p className="text-xs text-muted-foreground">Monto total que paga la familia por todos los hijos.</p>
+                                    <p className="text-[10px] text-muted-foreground">Debe ser mayor a 700 al registrar.</p>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-2 pt-4 border-t">
-                                <Checkbox
-                                    checked={formData.hermanos}
-                                    onCheckedChange={(checked) => {
-                                        setFormData({ ...formData, hermanos: checked === true });
-                                        if (checked) setOtrosHijos([{ nombre: "", grado: "", vehiculoId: "" }]); 
-                                        else setOtrosHijos([]);
-                                    }}
-                                    id="hermanos-check"
-                                />
-                                <Label htmlFor="hermanos-check" className="font-medium cursor-pointer">¿Tiene hermanos que viajan también?</Label>
+                                <Checkbox checked={formData.hermanos} onCheckedChange={(c)=>{ setFormData({...formData, hermanos: c===true}); setOtrosHijos(c ? [{nombre:"", grado:"", vehiculoId:""}] : []); }} id="h"/>
+                                <Label htmlFor="h" className="cursor-pointer font-medium">¿Tiene hermanos?</Label>
                             </div>
 
                             {formData.hermanos && (
                                 <div className="space-y-4 mt-4 border-t pt-4">
-                                    {otrosHijos.map((hijo, index) => (
-                                        <div key={index} className="grid gap-4 md:grid-cols-3 items-end border-b pb-4 last:border-0">
+                                    {otrosHijos.map((h, i) => (
+                                        <div key={i} className="grid gap-4 md:grid-cols-3 items-end border-b pb-4">
                                             <div className="space-y-2">
-                                                <Label>Nombre Hermano {index + 1}</Label>
-                                                <Input value={hijo.nombre} onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} placeholder="Nombre completo" />
+                                                <Label>Hermano {i+1}</Label>
+                                                <Input 
+                                                    value={h.nombre} 
+                                                    onChange={(e)=>{ 
+                                                        const val = e.target.value;
+                                                        if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                                        if (/(.)\1\1/.test(val)) return;
+
+                                                        const n=[...otrosHijos]; 
+                                                        n[i].nombre = toTitleCase(val); // Auto Capitalize también aquí
+                                                        setOtrosHijos(n); 
+                                                    }}
+                                                />
                                             </div>
-                                            <div className="space-y-2">
-                                                <Label>Grado</Label>
-                                                <Select value={hijo.grado} onValueChange={(value) => handleChangeHijo(index, "grado", value)}>
-                                                    <SelectTrigger><SelectValue placeholder="Grado" /></SelectTrigger>
-                                                    <SelectContent>
-                                                        {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
-                                                            <SelectItem key={g} value={g}>{g}</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="space-y-2 flex gap-2">
-                                                <div className="flex-1">
-                                                    <Label>Vehículo</Label>
-                                                    <Select value={hijo.vehiculoId} onValueChange={(value) => handleChangeHijo(index, "vehiculoId", value)}>
-                                                        <SelectTrigger><SelectValue placeholder="Vehículo" /></SelectTrigger>
-                                                        <SelectContent>
-                                                            {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <Button type="button" variant="ghost" size="icon" onClick={() => eliminarHijo(index)} className="text-red-500 mt-6">
-                                                    <Trash2 className="h-5 w-5" />
-                                                </Button>
-                                            </div>
+                                            <div className="space-y-2"><Label>Grado</Label><Select value={h.grado} onValueChange={(v)=>{const n=[...otrosHijos]; n[i].grado=v; setOtrosHijos(n);}}><SelectTrigger><SelectValue placeholder="Grado"/></SelectTrigger><SelectContent>{["1° Preescolar","2° Preescolar","3° Preescolar","1° Primaria","2° Primaria","3° Primaria","4° Primaria","5° Primaria","6° Primaria"].map(g=><SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select></div>
+                                            <div className="space-y-2 flex gap-2"><div className="flex-1"><Label>Vehículo</Label><Select value={h.vehiculoId} onValueChange={(v)=>{const n=[...otrosHijos]; n[i].vehiculoId=v; setOtrosHijos(n);}}><SelectTrigger><SelectValue placeholder="Vehículo"/></SelectTrigger><SelectContent>{vehiculos.map(v=><SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent></Select></div><Button type="button" variant="ghost" size="icon" className="text-red-500 mt-6" onClick={()=>{const n=[...otrosHijos]; n.splice(i,1); setOtrosHijos(n);}}><Trash2 className="h-5 w-5"/></Button></div>
                                         </div>
                                     ))}
-                                    <Button type="button" variant="outline" onClick={agregarHijo} size="sm">
-                                        <Plus className="h-4 w-4 mr-2" /> Agregar otro hermano
-                                    </Button>
+                                    <Button type="button" variant="outline" size="sm" onClick={()=>setOtrosHijos([...otrosHijos, {nombre:"", grado:"", vehiculoId:""}])}><Plus className="mr-2 h-4 w-4"/> Otro hermano</Button>
                                 </div>
                             )}
 
-                            <div className="flex gap-3 pt-6">
-                                <Button type="submit" disabled={loading} className="w-full md:w-auto">
-                                    {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                                    Registrar Familia
-                                </Button>
-                            </div>
+                            <Button type="submit" disabled={loading} className="w-full md:w-auto">{loading?<Loader2 className="mr-2 h-4 w-4 animate-spin"/>:<Save className="mr-2 h-4 w-4"/>} Registrar Familia</Button>
                         </form>
                     </CardContent>
                 </Card>
