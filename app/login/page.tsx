@@ -2,26 +2,21 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Bus, AlertCircle, Loader2 } from "lucide-react";
+import { Bus, AlertCircle, Loader2, Lock, User as UserIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   
-  const [identifier, setIdentifier] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
@@ -30,91 +25,75 @@ export default function LoginPage() {
   useEffect(() => {
     const savedUser = localStorage.getItem("rememberedUser");
     if (savedUser) {
-      setIdentifier(savedUser);
+      setUsername(savedUser);
       setRemember(true);
     }
   }, []);
 
+  // --- VALIDACIÓN DE USUARIO (Solo letras, números y puntos) ---
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    // Regex: ^[a-zA-Z0-9.]*$ significa: "Solo permite inicio a fin caracteres alfanuméricos y puntos"
+    if (/^[a-zA-Z0-9.]*$/.test(val)) {
+        setUsername(val);
+    }
+  };
+
+  // --- VALIDACIÓN DE CONTRASEÑA (Solo números, máx 6) ---
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    // Regex: /^\d*$/ significa "Solo dígitos"
+    if (/^\d*$/.test(val)) {
+        if (val.length <= 6) { // Límite estricto de 6
+            setPassword(val);
+        }
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    
+    if (password.length !== 6) {
+        setError("La contraseña debe ser un PIN de 6 números.");
+        return;
+    }
+
     setLoading(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://recorrido-backend-u2dd.onrender.com";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
       
-      // PASO 1: Buscar usuario en backend (Lookup)
-      const lookupRes = await fetch(`${apiUrl}/users/lookup`, {
+      const res = await fetch(`${apiUrl}/users/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: identifier }),
+        body: JSON.stringify({ 
+            username: username.toLowerCase(), // Aseguramos minúsculas
+            contrasena: password 
+        }),
       });
 
-      // 🛡️ MANEJO ESPECÍFICO DE ERRORES
-      if (!lookupRes.ok) {
-        if (lookupRes.status === 429) {
-            throw new Error("Has realizado demasiadas solicitudes. Por favor espera 1 minuto antes de intentar de nuevo.");
-        }
-        
-        const errorBody = await lookupRes.json().catch(() => ({}));
-        throw new Error(errorBody.message || "Usuario no encontrado en el sistema.");
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Credenciales incorrectas");
       }
 
-      const { email: realEmail, rol: rawRole } = await lookupRes.json();
-      const realRole = rawRole ? rawRole.toLowerCase().trim() : "";
-      
-      // PASO 2: Login en Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: realEmail,
-        password: password,
-      });
+      localStorage.setItem("currentUser", JSON.stringify(data));
 
-      if (error) throw error;
+      if (remember) localStorage.setItem("rememberedUser", username);
+      else localStorage.removeItem("rememberedUser");
 
-      // Sincronización de rol si es necesario
-      if (data.user && data.user.user_metadata?.rol !== realRole) {
-          await supabase.auth.updateUser({
-            data: { rol: realRole }
-          });
-          await supabase.auth.refreshSession();
-      }
+      toast({ title: "Bienvenido", description: "Iniciando sesión..." });
 
-      if (remember) {
-        localStorage.setItem("rememberedUser", identifier);
-      } else {
-        localStorage.removeItem("rememberedUser");
-      }
-
-      toast({ title: "Bienvenido", description: "Accediendo al sistema..." });
-
-      // PASO 4: Redirección según rol
-      switch (realRole) {
-        case 'propietario':
-        case 'admin':
-          router.push("/dashboard/propietario");
-          break;
-        case 'tutor':
-        case 'padre':
-          router.push("/dashboard/tutor"); 
-          break;
-        case 'asistente':
-        case 'chofer': // Agregamos chofer aquí por si acaso
-          router.push("/dashboard/asistente");
-          break;
-        default:
-           setError(`Tu usuario tiene rol "${realRole}" y no tiene panel asignado.`);
-           await supabase.auth.signOut();
-      }
+      if (data.rol === 'propietario') router.push('/dashboard/propietario');
+      else if (data.rol === 'tutor') router.push('/dashboard/tutor');
+      else if (data.rol === 'asistente') router.push('/dashboard/asistente');
+      else router.push('/dashboard');
 
     } catch (err: any) {
       console.error("Error login:", err);
-      
-      // Mostrar mensaje exacto del error
       setError(err.message || "Error de conexión.");
-
-      if (err.message?.includes("Invalid login credentials")) {
-         setError("Contraseña incorrecta.");
-      }
     } finally {
       setLoading(false);
     }
@@ -136,30 +115,40 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
+            
             <div className="space-y-2">
-              <Label htmlFor="identifier">Usuario o Teléfono</Label>
-              <Input
-                id="identifier"
-                type="text"
-                placeholder="Ej: juan.perez"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                required
-                disabled={loading}
-              />
+              <Label htmlFor="username">Usuario</Label>
+              <div className="relative">
+                <UserIcon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="username"
+                  placeholder="Ej: juan.perez"
+                  className="pl-9"
+                  value={username}
+                  onChange={handleUsernameChange} // Usamos la validación segura
+                  required
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={loading}
-              />
+              <Label htmlFor="password">Contraseña (PIN)</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                    id="password"
+                    type="password"
+                    inputMode="numeric" // Abre teclado numérico en celular
+                    maxLength={6}       // Límite HTML nativo
+                    className="pl-9 tracking-widest font-mono" // Separación para que parezca PIN
+                    placeholder="******"
+                    value={password}
+                    onChange={handlePasswordChange} // Usamos la validación segura
+                    required
+                    disabled={loading}
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2 mt-2">
@@ -170,7 +159,7 @@ export default function LoginPage() {
                 onChange={(e) => setRemember(e.target.checked)}
                 className="rounded border-gray-300 text-primary focus:ring-primary"
               />
-              <Label htmlFor="remember" className="cursor-pointer font-normal">
+              <Label htmlFor="remember" className="cursor-pointer font-normal text-muted-foreground">
                 Recordarme
               </Label>
             </div>
@@ -184,16 +173,19 @@ export default function LoginPage() {
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verificando...
-                </>
+                 <>
+                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Entrando...
+                 </>
               ) : (
-                "Iniciar Sesión"
+                 "Iniciar Sesión"
               )}
             </Button>
           </form>
-          <div className="mt-6 text-center text-xs text-muted-foreground">
-            <p>¿Olvidaste tu contraseña? Contacta al administrador.</p>
+          
+          <div className="mt-6 p-4 bg-muted rounded-lg text-center">
+             <p className="text-xs text-muted-foreground">
+               Si olvidaste tu contraseña, contacta al administrador.
+             </p>
           </div>
         </CardContent>
       </Card>
