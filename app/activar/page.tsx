@@ -14,7 +14,11 @@ function ActivarCuentaContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   
-  const token = searchParams.get("token");
+  // 1. Capturamos el token inicial de la URL
+  const tokenUrl = searchParams.get("token");
+  
+  // 2. Lo guardamos en un estado para que no se pierda al limpiar la URL
+  const [token, setToken] = useState(tokenUrl || "");
   
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -24,15 +28,26 @@ function ActivarCuentaContent() {
   const [viewState, setViewState] = useState<"form" | "success" | "error">("form");
   const [errorMessage, setErrorMessage] = useState("");
 
+  // 3. EFECTO DE CAMUFLAJE: Limpiar URL al cargar
+  useEffect(() => {
+    if (tokenUrl) {
+        // Guardamos en estado por si acaso (doble seguridad)
+        setToken(tokenUrl);
+        // Borramos el token de la barra de direcciones visualmente
+        window.history.replaceState(null, '', '/activar');
+    }
+  }, [tokenUrl]);
+
   const handleActivar = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validaciones locales
+    // Usamos la variable de estado 'token', NO la URL
     if (!token) {
         setViewState("error");
-        setErrorMessage("El enlace de invitación está incompleto.");
+        setErrorMessage("No se encontró el token de activación. Intenta abrir el enlace nuevamente.");
         return;
     }
+    
     if (password.length < 6) {
         toast({ title: "Contraseña insegura", description: "Usa al menos 6 caracteres.", variant: "destructive" });
         return;
@@ -46,6 +61,7 @@ function ActivarCuentaContent() {
     try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://recorrido-backend-u2dd.onrender.com";
         
+        // Enviamos el token guardado en memoria
         const res = await fetch(`${apiUrl}/users/activar`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -55,25 +71,22 @@ function ActivarCuentaContent() {
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-            // Analizamos el error
             let serverMsg = data.message || "Error desconocido";
             if (Array.isArray(serverMsg)) serverMsg = serverMsg.join(", ");
             
-            // Si el token ya no sirve, cambiamos la vista completa
             if (
                 serverMsg.toLowerCase().includes("inválido") || 
                 serverMsg.toLowerCase().includes("expirado") || 
                 serverMsg.toLowerCase().includes("not found")
             ) {
                 setViewState("error");
-                setErrorMessage("Este enlace de invitación ya fue utilizado o ha caducado. Es probable que tu cuenta ya esté activa.");
-                return; // Salimos para no mostrar toast
+                setErrorMessage("Este enlace de invitación ya fue utilizado o ha caducado.");
+                return; 
             }
             
             throw new Error(serverMsg);
         }
 
-        // Éxito total
         setViewState("success");
         toast({ 
             title: "¡Bienvenido!", 
@@ -81,7 +94,6 @@ function ActivarCuentaContent() {
             className: "bg-green-600 text-white border-none"
         });
         
-        // Redirección automática suave
         setTimeout(() => router.push("/login"), 3000);
 
     } catch (error: any) {
@@ -96,19 +108,8 @@ function ActivarCuentaContent() {
     }
   };
 
-// Lógica de Camuflaje que debes tener en tu archivo activar/page.tsx
-useEffect(() => {
-    const tokenParam = searchParams.get("token");
-    if (tokenParam) {
-      // Reemplaza la URL en el historial de navegación.
-      // Esto hace que el token NO se guarde en el historial del navegador.
-      window.history.replaceState(null, '', '/activar'); 
-    }
-}, [searchParams]);
-
-
-  // --- VISTA 1: ERROR / TOKEN VENCIDO ---
-  if (!token || viewState === "error") {
+  // --- VISTA 1: ERROR (Solo si no hay token NI en URL NI en memoria) ---
+  if (!token && !tokenUrl && viewState !== "success") {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
             <Card className="w-full max-w-md text-center p-8 border-amber-200 bg-amber-50 shadow-lg animate-in fade-in zoom-in duration-300">
@@ -117,7 +118,7 @@ useEffect(() => {
                  </div>
                  <h2 className="text-xl font-bold text-amber-800 mb-2">Enlace no disponible</h2>
                  <p className="text-amber-700/80 mb-6 text-sm leading-relaxed">
-                    {errorMessage || "El enlace de invitación está roto o ya fue utilizado."}
+                    {errorMessage || "El enlace de invitación está roto o incompleto."}
                  </p>
                  <Button 
                     onClick={() => router.push("/login")} 
@@ -149,7 +150,7 @@ useEffect(() => {
       );
   }
 
-  // --- VISTA 3: FORMULARIO (Normal) ---
+  // --- VISTA 3: FORMULARIO ---
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-md shadow-xl border-t-4 border-t-primary animate-in fade-in duration-500">
@@ -188,19 +189,23 @@ useEffect(() => {
                             className="h-11"
                         />
                     </div>
+                    
+                    {viewState === "error" && (
+                        <div className="text-sm text-red-600 bg-red-50 p-3 rounded border border-red-200">
+                            {errorMessage}
+                        </div>
+                    )}
+
                     <Button type="submit" className="w-full h-11 text-base" disabled={loading}>
                         {loading ? (
                             <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Activando...
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Guardando...
                             </>
                         ) : (
                             "Guardar y Entrar"
                         )}
                     </Button>
                 </form>
-                <p className="text-xs text-center text-muted-foreground mt-6">
-                    ¿Ya tienes cuenta? <span className="text-primary cursor-pointer hover:underline" onClick={() => router.push("/login")}>Inicia sesión aquí</span>
-                </p>
             </CardContent>
         </Card>
     </div>
