@@ -40,27 +40,29 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    console.log("1. Iniciando login con:", identifier);
-
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://recorrido-backend-u2dd.onrender.com";
       
-      // PASO 1: Buscar usuario en backend
+      // PASO 1: Buscar usuario en backend (Lookup)
       const lookupRes = await fetch(`${apiUrl}/users/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: identifier }),
       });
 
+      // 🛡️ MANEJO ESPECÍFICO DE ERRORES
       if (!lookupRes.ok) {
-        throw new Error("Usuario no encontrado en el sistema.");
+        if (lookupRes.status === 429) {
+            throw new Error("Has realizado demasiadas solicitudes. Por favor espera 1 minuto antes de intentar de nuevo.");
+        }
+        
+        const errorBody = await lookupRes.json().catch(() => ({}));
+        throw new Error(errorBody.message || "Usuario no encontrado en el sistema.");
       }
 
       const { email: realEmail, rol: rawRole } = await lookupRes.json();
       const realRole = rawRole ? rawRole.toLowerCase().trim() : "";
       
-      console.log("2. Datos encontrados:", { email: realEmail, rol: realRole });
-
       // PASO 2: Login en Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email: realEmail,
@@ -69,19 +71,14 @@ export default function LoginPage() {
 
       if (error) throw error;
 
-      // --- ¡EL TRUCO DE MAGIA AQUÍ! --- 🪄
-      // Actualizamos la metadata de la sesión de Supabase para que coincida con la BD.
-      // Esto arregla usuarios viejos que no tenían el rol en su metadata.
+      // Sincronización de rol si es necesario
       if (data.user && data.user.user_metadata?.rol !== realRole) {
-          console.log("🔄 Sincronizando rol en Supabase...");
           await supabase.auth.updateUser({
             data: { rol: realRole }
           });
-          // Refrescamos la sesión para que el cambio surta efecto inmediato
           await supabase.auth.refreshSession();
       }
 
-      // PASO 3: Guardar preferencia
       if (remember) {
         localStorage.setItem("rememberedUser", identifier);
       } else {
@@ -90,9 +87,7 @@ export default function LoginPage() {
 
       toast({ title: "Bienvenido", description: "Accediendo al sistema..." });
 
-      // PASO 4: Redirección
-      console.log("3. Redirigiendo a:", realRole);
-
+      // PASO 4: Redirección según rol
       switch (realRole) {
         case 'propietario':
         case 'admin':
@@ -103,27 +98,22 @@ export default function LoginPage() {
           router.push("/dashboard/tutor"); 
           break;
         case 'asistente':
+        case 'chofer': // Agregamos chofer aquí por si acaso
           router.push("/dashboard/asistente");
           break;
         default:
-          // Si es chofer o algo no mapeado
-          if (realRole === 'chofer') {
-             // router.push("/dashboard/chofer"); // Descomentar cuando exista
-             toast({ title: "Aviso", description: "El panel de chofer está en construcción." });
-          } else {
-             setError(`Tu usuario tiene rol "${realRole}" y no tiene panel asignado.`);
-             await supabase.auth.signOut(); // Salir para evitar bucle
-          }
+           setError(`Tu usuario tiene rol "${realRole}" y no tiene panel asignado.`);
+           await supabase.auth.signOut();
       }
 
     } catch (err: any) {
       console.error("Error login:", err);
-      if (err.message?.includes("Usuario no encontrado")) {
-         setError("El usuario ingresado no existe.");
-      } else if (err.message?.includes("Invalid login credentials")) {
+      
+      // Mostrar mensaje exacto del error
+      setError(err.message || "Error de conexión.");
+
+      if (err.message?.includes("Invalid login credentials")) {
          setError("Contraseña incorrecta.");
-      } else {
-         setError("Error de conexión o credenciales inválidas.");
       }
     } finally {
       setLoading(false);
