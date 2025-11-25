@@ -1,6 +1,5 @@
 "use client"
 
-// 👇 Importamos 'use' de react para desenvolver los params
 import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
@@ -14,6 +13,40 @@ import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 import { Separator } from "@/components/ui/separator"
+import { z } from "zod"
+
+// --- 1. REGLAS DE NEGOCIO Y SEGURIDAD ---
+
+const nombreRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
+const direccionRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]+$/;
+const telefonoNicaRegex = /^[578][0-9]{7}$/; 
+
+// Esquema para validar al Tutor
+const tutorSchema = z.object({
+    nombre: z.string()
+        .min(5, "El nombre del tutor es muy corto.")
+        .max(60, "El nombre del tutor es muy largo.")
+        .regex(nombreRegex, "El nombre solo debe contener letras.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repetir letras excesivamente (máx 2 veces).")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "El nombre debe iniciar con mayúscula."),
+    telefono: z.string()
+        .regex(telefonoNicaRegex, "Teléfono inválido (8 dígitos, inicia con 5, 7 u 8)."),
+    direccion: z.string()
+        .min(10, "Dirección muy corta.")
+        .regex(direccionRegex, "La dirección solo acepta letras y números.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repetir caracteres excesivamente en la dirección."),
+});
+
+// Esquema para validar cada Alumno
+const alumnoSchema = z.object({
+    nombre: z.string()
+        .min(3, "Nombre de alumno muy corto.")
+        .regex(nombreRegex, "Nombre de alumno solo letras.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repetir letras excesivamente (máx 2 veces).")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "Nombre de alumno debe iniciar con mayúscula."),
+    grado: z.string().min(1, "Selecciona un grado."),
+    vehiculoId: z.string().min(1, "Selecciona un vehículo."),
+});
 
 const menuItems: MenuItem[] = [
     { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
@@ -28,9 +61,7 @@ const menuItems: MenuItem[] = [
 
 type Vehiculo = { id: string; nombre: string };
 
-// 👇 Cambiamos el tipo de params a Promise
 export default function EditarFamiliaPage({ params }: { params: Promise<{ id: string }> }) {
-    // 👇 Desenvolvemos el ID usando el hook 'use'
     const { id } = use(params);
     
     const router = useRouter();
@@ -63,7 +94,6 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                 const resVehiculos = await fetch(`${apiUrl}/vehiculos?estado=activo`, { headers });
                 if (resVehiculos.ok) setVehiculos(await resVehiculos.json());
 
-                // 👇 Usamos el 'id' ya desenvelto
                 const resAlumno = await fetch(`${apiUrl}/alumnos/${id}`, { headers });
                 if (!resAlumno.ok) throw new Error("Alumno no encontrado");
                 const alumnoPrincipal = await resAlumno.json();
@@ -107,7 +137,7 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
             }
         };
         init();
-    }, [id, toast, router]); // Dependencia actualizada a 'id'
+    }, [id, toast, router]);
 
     const handleChangeHijo = (index: number, field: string, value: any) => {
         const nuevos = [...hijos];
@@ -157,10 +187,37 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
         setHijos(nuevosHijos);
     };
 
+    // Helper Title Case
+    const toTitleCase = (str: string) => {
+        return str.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
+    };
+
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
         try {
+            // --- 1. VALIDACIÓN ZOD ---
+            
+            // Validar Tutor
+            const tutorValidado = tutorSchema.parse(tutorData);
+
+            // Validar Precio Total
+            if (precioFamiliarTotal < 700) {
+                throw new Error("El precio mensual familiar debe ser al menos 700 C$.");
+            }
+
+            // Validar Cada Hijo
+            for (const [index, hijo] of hijos.entries()) {
+                try {
+                    alumnoSchema.parse(hijo);
+                } catch (err: any) {
+                    if (err instanceof z.ZodError) {
+                        throw new Error(`Error en Estudiante ${index + 1} (${hijo.nombre || 'Nuevo'}): ${err.errors[0].message}`);
+                    }
+                    throw err;
+                }
+            }
+
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
             const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
@@ -171,22 +228,22 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                     method: 'PATCH',
                     headers,
                     body: JSON.stringify({
-                        nombre: tutorData.nombre,
-                        telefono: tutorData.telefono
+                        nombre: tutorValidado.nombre,
+                        telefono: tutorValidado.telefono
                     })
                 });
             }
 
             for (const hijo of hijos) {
                 const payload = {
-                    nombre: hijo.nombre,
+                    nombre: hijo.nombre.trim(),
                     grado: hijo.grado,
                     vehiculoId: hijo.vehiculoId,
                     precio: hijo.precio,
-                    direccion: tutorData.direccion,
+                    direccion: tutorValidado.direccion.trim(),
                     activo: hijo.activo,
-                    tutor: tutorId ? undefined : tutorData.nombre,
-                    contacto: tutorId ? undefined : tutorData.telefono,
+                    tutor: tutorId ? undefined : tutorValidado.nombre,
+                    contacto: tutorId ? undefined : tutorValidado.telefono,
                     ...( !hijo.id && { tutorUserId: tutorId }) 
                 };
 
@@ -197,7 +254,7 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                 } else {
                     const createPayload = {
                         ...payload,
-                        tutor: { nombre: tutorData.nombre, telefono: tutorData.telefono }
+                        tutor: { nombre: tutorValidado.nombre, telefono: tutorValidado.telefono }
                     };
                     await fetch(`${apiUrl}/alumnos`, {
                         method: 'POST', headers, body: JSON.stringify(createPayload)
@@ -205,11 +262,12 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                 }
             }
             
-            toast({ title: "Familia Actualizada", description: "Todos los cambios se han guardado." });
+            toast({ title: "Familia Actualizada", description: "Todos los cambios se han guardado.", className: "bg-green-600 text-white" });
             router.push("/dashboard/propietario/alumnos");
 
         } catch (error: any) {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
+            const mensaje = error instanceof z.ZodError ? error.errors[0].message : error.message;
+            toast({ title: "Error de Validación", description: mensaje, variant: "destructive" });
         } finally {
             setSaving(false);
         }
@@ -224,7 +282,6 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                     <Link href="/dashboard/propietario/alumnos">
                         <Button variant="ghost" size="sm"><ArrowLeft className="mr-2 h-4 w-4" /> Volver</Button>
                     </Link>
-                    {/* SIN COLORES LLAMATIVOS */}
                     <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-1 rounded-full border">
                         <UserCheck className="w-4 h-4" /> Editando Grupo Familiar
                     </div>
@@ -238,7 +295,6 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                     <CardContent>
                         <form onSubmit={handleSave} className="space-y-8">
                             
-                            {/* SIN COLORES DE FONDO FUERTES */}
                             <div className="p-6 rounded-lg border bg-card/50">
                                 <h3 className="text-sm font-bold uppercase text-muted-foreground mb-4 tracking-wider">Datos del Tutor (Responsable)</h3>
                                 <div className="grid gap-6 md:grid-cols-2">
@@ -246,7 +302,12 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                                         <Label>Nombre del Tutor</Label>
                                         <Input 
                                             value={tutorData.nombre} 
-                                            onChange={(e) => setTutorData({...tutorData, nombre: e.target.value})}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                                if (/(.)\1\1/.test(val)) return; // Anti-repeat visual
+                                                setTutorData({...tutorData, nombre: toTitleCase(val)});
+                                            }}
                                             placeholder="Nombre completo"
                                         />
                                     </div>
@@ -254,15 +315,26 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                                         <Label>Teléfono (Contacto)</Label>
                                         <Input 
                                             value={tutorData.telefono} 
-                                            onChange={(e) => setTutorData({...tutorData, telefono: e.target.value})}
-                                            placeholder="Ej: 5555-5555"
+                                            maxLength={8}
+                                            onChange={(e) => {
+                                                let val = e.target.value.replace(/\D/g, '');
+                                                if (val.length === 1 && !['5','7','8'].includes(val)) return;
+                                                setTutorData({...tutorData, telefono: val});
+                                            }}
+                                            placeholder="Ej: 88888888"
                                         />
+                                        <p className="text-[10px] text-muted-foreground">8 dígitos (5, 7, 8).</p>
                                     </div>
                                     <div className="space-y-2 md:col-span-2">
                                         <Label>Dirección de Recogida</Label>
                                         <Input 
                                             value={tutorData.direccion} 
-                                            onChange={(e) => setTutorData({...tutorData, direccion: e.target.value})}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (!/^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                                if (/(.)\1\1/.test(val)) return; // Anti-repeat visual para dirección
+                                                setTutorData({...tutorData, direccion: val})
+                                            }}
                                             placeholder="Dirección exacta"
                                         />
                                         <p className="text-xs text-muted-foreground">Esta dirección se aplicará a todos los hijos.</p>
@@ -276,65 +348,74 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                                 <div className="flex justify-between items-end">
                                     <h3 className="text-sm font-bold uppercase text-muted-foreground tracking-wider">Estudiantes ({hijos.length})</h3>
                                     <div className="w-48">
-                                        <Label className="text-xs mb-1 block text-right font-medium">Mensualidad Familiar (C$)</Label>
-                                        {/* INPUT LIMPIO SIN COLORES VERDES */}
+                                        <Label className="text-xs mb-1 block text-right font-medium text-green-600">Mensualidad Familiar (C$)</Label>
                                         <Input 
                                             type="number" 
+                                            min={700}
                                             value={precioFamiliarTotal}
-                                            onChange={(e) => redistribuirPrecio(Number(e.target.value))}
-                                            className="text-right font-bold text-lg"
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value);
+                                                if (e.target.value !== "" && val < 0) return;
+                                                redistribuirPrecio(val);
+                                            }}
+                                            className="text-right font-bold text-lg border-green-200"
                                         />
                                     </div>
                                 </div>
 
                                 {hijos.map((hijo, index) => (
                                     <div key={index} className="grid gap-4 md:grid-cols-12 items-end p-4 border rounded-lg shadow-sm relative bg-card">
-                                        <div className="md:col-span-4 space-y-2">
-                                            <Label>Nombre</Label>
-                                            <Input 
-                                                value={hijo.nombre} 
-                                                onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} 
-                                                placeholder="Nombre del alumno"
-                                            />
-                                        </div>
-                                        <div className="md:col-span-3 space-y-2">
-                                            <Label>Grado</Label>
-                                            <Select value={hijo.grado} onValueChange={(val) => handleChangeHijo(index, "grado", val)}>
-                                                <SelectTrigger><SelectValue placeholder="Grado" /></SelectTrigger>
-                                                <SelectContent>
-                                                    {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
-                                                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="md:col-span-3 space-y-2">
-                                            <Label>Vehículo</Label>
-                                            <Select value={hijo.vehiculoId || "N/A"} onValueChange={(val) => handleChangeHijo(index, "vehiculoId", val)}>
-                                                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                                                <SelectContent>
-                                                    {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="md:col-span-2 flex gap-2 items-end">
-                                            <div className="space-y-2 flex-1">
-                                                <Label className="text-xs text-muted-foreground">Cuota</Label>
-                                                <div className="h-10 flex items-center px-3 bg-muted rounded-md border text-sm text-muted-foreground">
-                                                    C$ {hijo.precio}
-                                                </div>
+                                            <div className="md:col-span-4 space-y-2">
+                                                <Label>Nombre</Label>
+                                                <Input 
+                                                    value={hijo.nombre} 
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                                        if (/(.)\1\1/.test(val)) return; // Anti-repeat visual
+                                                        handleChangeHijo(index, "nombre", toTitleCase(val));
+                                                    }} 
+                                                    placeholder="Nombre del alumno"
+                                                />
                                             </div>
-                                            <Button 
-                                                type="button" 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="text-destructive hover:text-destructive hover:bg-destructive/10 mb-0.5"
-                                                onClick={() => eliminarHijo(index)}
-                                                title="Eliminar estudiante"
-                                            >
-                                                <Trash2 className="h-5 w-5" />
-                                            </Button>
-                                        </div>
+                                            <div className="md:col-span-3 space-y-2">
+                                                <Label>Grado</Label>
+                                                <Select value={hijo.grado} onValueChange={(val) => handleChangeHijo(index, "grado", val)}>
+                                                    <SelectTrigger><SelectValue placeholder="Grado" /></SelectTrigger>
+                                                    <SelectContent>
+                                                        {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
+                                                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="md:col-span-3 space-y-2">
+                                                <Label>Vehículo</Label>
+                                                <Select value={hijo.vehiculoId || "N/A"} onValueChange={(val) => handleChangeHijo(index, "vehiculoId", val)}>
+                                                    <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                                                    <SelectContent>
+                                                        {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="md:col-span-2 flex gap-2 items-end">
+                                                <div className="space-y-2 flex-1">
+                                                    <Label className="text-xs text-muted-foreground">Cuota</Label>
+                                                    <div className="h-10 flex items-center px-3 bg-muted rounded-md border text-sm text-muted-foreground">
+                                                        C$ {hijo.precio}
+                                                    </div>
+                                                </div>
+                                                <Button 
+                                                    type="button" 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="text-destructive hover:text-destructive hover:bg-destructive/10 mb-0.5"
+                                                    onClick={() => eliminarHijo(index)}
+                                                    title="Eliminar estudiante"
+                                                >
+                                                    <Trash2 className="h-5 w-5" />
+                                                </Button>
+                                            </div>
                                     </div>
                                 ))}
 
@@ -344,7 +425,6 @@ export default function EditarFamiliaPage({ params }: { params: Promise<{ id: st
                             </div>
 
                             <div className="flex justify-end pt-6 border-t">
-                                {/* BOTÓN STANDARD */}
                                 <Button type="submit" disabled={saving} className="min-w-[200px]">
                                     {saving ? <Loader2 className="mr-2 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                                     Guardar Cambios

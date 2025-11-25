@@ -23,9 +23,46 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // Importar Supabase para autenticación
+import { supabase } from "@/lib/supabase"; 
+import { z } from "zod";
 
-// --- DEFINICIÓN LOCAL DEL TIPO AVISO (Por si falla la importación) ---
+// --- 1. REGLAS DE SEGURIDAD (ZOD & REGEX) ---
+// Misma lógica que en "Nuevo Aviso" para consistencia total.
+
+const soloLetrasRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
+const contenidoRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]+$/; 
+
+const avisoSchema = z.object({
+  titulo: z.string()
+    .min(5, "El título es muy corto (mínimo 5 letras).")
+    .max(40, "El título no debe exceder 40 caracteres.")
+    .regex(soloLetrasRegex, "El título solo puede contener letras (Sin símbolos ni números).")
+    .refine((val) => !/(.)\1\1/.test(val), {
+        message: "No puedes repetir la misma letra más de 2 veces seguidas.",
+    }),
+  contenido: z.string()
+    .min(10, "El mensaje es muy corto (mínimo 10 caracteres).")
+    .max(300, "El mensaje no debe exceder 300 caracteres.")
+    .regex(contenidoRegex, "Caracteres no permitidos detectados (posible riesgo de seguridad).")
+    .refine((val) => !/(.)\1\1/.test(val), {
+        message: "No abuses de letras repetidas (ej: 'Hoooola').",
+    })
+    .refine((val) => {
+        // Lógica Estricta de Números (Solo Fechas 01-31)
+        const numbers = val.match(/\d+/g);
+        if (!numbers) return true; 
+        
+        return numbers.every(n => {
+            if (n === "00") return false; 
+            if (n.length > 2) return false; 
+            const num = parseInt(n);
+            return num >= 1 && num <= 31; 
+        });
+    }, {
+      message: "Solo se permiten números para fechas (01 al 31). No se permiten años, precios o '00'.",
+    }),
+});
+
 type Aviso = {
   id: string;
   titulo: string;
@@ -35,7 +72,6 @@ type Aviso = {
   estado?: string;
 };
 
-// --- Menú ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -57,29 +93,28 @@ export default function EditarAvisoPage() {
   const [loadingData, setLoadingData] = useState(true);
   const [formData, setFormData] = useState<Partial<Aviso>>({});
 
-  // --- Función para obtener headers con autenticación ---
+  // Función auxiliar para validar números en tiempo real
+  const validarNumerosEnVivo = (texto: string) => {
+      const numeros = texto.match(/\d+/g);
+      if (!numeros) return true;
+      return numeros.every(n => {
+          if (n === "00") return false;
+          if (n.length > 2) return false; 
+          if (parseInt(n) > 31) return false; 
+          return true;
+      });
+  };
+
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    
-    if (!token) {
-      throw new Error("No hay sesión activa");
-    }
-
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
+    if (!token) throw new Error("No hay sesión activa");
+    return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
   };
 
-  // --- Cargar datos del aviso a editar (CORREGIDO) ---
   useEffect(() => {
     if (!id) {
-      toast({
-        title: "Error",
-        description: "ID de aviso no válido",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "ID de aviso no válido", variant: "destructive" });
       router.push("/dashboard/propietario/avisos");
       return;
     }
@@ -87,22 +122,13 @@ export default function EditarAvisoPage() {
     const fetchAviso = async () => {
       try {
         setLoadingData(true);
-        
-        // Obtener headers con autenticación
         const headers = await getAuthHeaders();
-        
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`, {
-          headers
-        });
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`, { headers });
 
         if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error("No se pudo encontrar el aviso");
-          } else if (response.status === 401) {
-            throw new Error("No autorizado - por favor inicia sesión nuevamente");
-          } else {
-            throw new Error(`Error del servidor: ${response.status}`);
-          }
+          if (response.status === 404) throw new Error("No se pudo encontrar el aviso");
+          if (response.status === 401) throw new Error("No autorizado");
+          throw new Error(`Error del servidor: ${response.status}`);
         }
 
         const data: Aviso = await response.json();
@@ -110,11 +136,7 @@ export default function EditarAvisoPage() {
         
       } catch (err: any) {
         console.error("Error al cargar aviso:", err);
-        toast({ 
-          title: "Error al cargar", 
-          description: err.message, 
-          variant: "destructive" 
-        });
+        toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
         router.push("/dashboard/propietario/avisos");
       } finally {
         setLoadingData(false);
@@ -123,62 +145,33 @@ export default function EditarAvisoPage() {
     fetchAviso();
   }, [id, toast, router]);
 
-  // --- Manejadores de formulario ---
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
   const handleSelectChange = (value: string) => {
     setFormData(prev => ({ ...prev, destinatario: value as Aviso['destinatario'] }));
   };
 
-  // --- Enviar actualización a la API (CORREGIDO) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // Validaciones
-      if (!formData.titulo?.trim()) {
-        toast({ 
-          title: "Error de validación", 
-          description: "El título es obligatorio", 
-          variant: "destructive" 
-        });
-        setLoading(false);
-        return;
-      }
-
-      if (!formData.contenido?.trim()) {
-        toast({ 
-          title: "Error de validación", 
-          description: "El contenido es obligatorio", 
-          variant: "destructive" 
-        });
-        setLoading(false);
-        return;
-      }
+      // 1. VALIDACIÓN SEGURA CON ZOD
+      // Validamos solo los campos editables (título y contenido)
+      const datosValidados = avisoSchema.parse({
+        titulo: formData.titulo || "",
+        contenido: formData.contenido || ""
+      });
 
       if (!formData.destinatario) {
-        toast({ 
-          title: "Error de validación", 
-          description: "El destinatario es obligatorio", 
-          variant: "destructive" 
-        });
-        setLoading(false);
-        return;
+        throw new Error("El destinatario es obligatorio.");
       }
 
       const payload = {
-        titulo: formData.titulo.trim(),
-        contenido: formData.contenido.trim(),
+        titulo: datosValidados.titulo,
+        contenido: datosValidados.contenido,
         destinatario: formData.destinatario,
       };
 
-      // Obtener headers con autenticación
       const headers = await getAuthHeaders();
-      
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/avisos/${id}`, {
         method: 'PATCH',
         headers,
@@ -190,23 +183,14 @@ export default function EditarAvisoPage() {
         throw new Error(errorData.message || "No se pudo actualizar el aviso");
       }
 
-      toast({ 
-        title: "¡Actualizado!", 
-        description: "El aviso se ha guardado correctamente." 
-      });
-      
-      // Redirigir después de un breve delay
-      setTimeout(() => {
-        router.push("/dashboard/propietario/avisos");
-      }, 1000);
+      toast({ title: "¡Actualizado!", description: "El aviso se ha guardado correctamente.", className: "bg-green-600 text-white" });
+      setTimeout(() => { router.push("/dashboard/propietario/avisos"); }, 1000);
 
     } catch (err: any) {
       console.error("Error al guardar:", err);
-      toast({ 
-        title: "Error al guardar", 
-        description: err.message, 
-        variant: "destructive" 
-      });
+      // Manejo de errores de Zod o generales
+      const mensaje = err instanceof z.ZodError ? err.errors[0].message : err.message;
+      toast({ title: "Error de Validación", description: mensaje, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -227,54 +211,62 @@ export default function EditarAvisoPage() {
     <DashboardLayout title="Editar Aviso" menuItems={menuItems}>
       <div className="space-y-6">
         <Link href="/dashboard/propietario/avisos">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver a la lista
-          </Button>
+          <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-2" /> Volver a la lista</Button>
         </Link>
 
         <Card>
           <CardHeader>
-            <CardTitle>Editar Comunicado</CardTitle>
-            <CardDescription>Ajusta los detalles del aviso.</CardDescription>
+            <CardTitle>Editar Comunicado Seguro</CardTitle>
+            <CardDescription>Ajusta los detalles del aviso validado.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="titulo">Título *</Label>
-                  <Input 
-                    id="titulo" 
-                    name="titulo"
-                    placeholder="Ej: Suspensión de clases" 
-                    value={formData.titulo || ''} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="destinatario">Destinatario *</Label>
-                  <Select 
-                    value={formData.destinatario || 'todos'} 
-                    onValueChange={handleSelectChange}
-                    required
-                    disabled={loading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona a quién enviar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="tutores">Solo Tutores</SelectItem>
-                      <SelectItem value="personal">Solo Personal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* TÍTULO VALIDADO */}
+              <div className="space-y-2">
+                <Label htmlFor="titulo">Título *</Label>
+                <Input 
+                  id="titulo" 
+                  name="titulo"
+                  placeholder="Ej: Suspensión de clases" 
+                  value={formData.titulo || ''} 
+                  onChange={(e) => {
+                      const val = e.target.value;
+                      // Whitelist: Solo letras y espacios
+                      if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                      // Anti-repetición
+                      if (/(.)\1\1/.test(val)) return;
+
+                      setFormData(prev => ({ ...prev, titulo: val }));
+                  }} 
+                  required 
+                  maxLength={40}
+                  disabled={loading}
+                />
+                <p className="text-[10px] text-muted-foreground">Máx 40 caracteres. Solo letras.</p>
+              </div>
+              
+              {/* DESTINATARIO */}
+              <div className="space-y-2">
+                <Label htmlFor="destinatario">Destinatario *</Label>
+                <Select 
+                  value={formData.destinatario || 'todos'} 
+                  onValueChange={handleSelectChange}
+                  required
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona a quién enviar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="tutores">Solo Tutores</SelectItem>
+                    <SelectItem value="personal">Solo Personal</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
+              {/* CONTENIDO VALIDADO */}
               <div className="space-y-2">
                 <Label htmlFor="contenido">Contenido del Aviso *</Label>
                 <Textarea 
@@ -282,11 +274,23 @@ export default function EditarAvisoPage() {
                   name="contenido"
                   placeholder="Escribe el mensaje completo aquí..." 
                   value={formData.contenido || ''} 
-                  onChange={handleChange} 
+                  onChange={(e) => {
+                      const val = e.target.value;
+                      // Whitelist: Letras y números
+                      if (!/^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                      // Anti-repetición
+                      if (/(.)\1\1/.test(val)) return;
+                      // Validación numérica estricta
+                      if (!validarNumerosEnVivo(val)) return;
+
+                      setFormData(prev => ({ ...prev, contenido: val }));
+                  }} 
                   required 
                   rows={6}
+                  maxLength={300}
                   disabled={loading}
                 />
+                <p className="text-[10px] text-muted-foreground">Sin símbolos. Números solo para fechas (1-31).</p>
               </div>
 
               <div className="flex gap-3 pt-4">

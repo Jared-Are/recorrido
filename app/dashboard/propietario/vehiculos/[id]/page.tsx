@@ -25,8 +25,47 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // <-- Usa el cliente unificado
+import { supabase } from "@/lib/supabase"; 
+import { z } from "zod";
 
+// --- 1. REGLAS DE NEGOCIO Y SEGURIDAD (Idénticas a Nuevo Vehículo) ---
+
+const soloLetrasRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
+const modeloRegex = /^[a-zA-Z0-9\s-]+$/; 
+const placaRegex = /^M[1-9][0-9]{5}$/; // Placa M, primer dígito 1-9, luego 5 dígitos.
+
+const currentYear = new Date().getFullYear();
+const maxYear = currentYear + 1;
+
+const vehiculoSchema = z.object({
+    nombre: z.string()
+        .min(3, "El nombre es muy corto.")
+        .max(40, "El nombre es muy largo.")
+        .regex(soloLetrasRegex, "El nombre solo debe contener letras.")
+        .refine((val) => !/(.)\1\1/.test(val), "No puedes repetir la misma letra más de 2 veces seguidas."),
+    marca: z.string()
+        .min(3, "La marca es muy corta.")
+        .regex(soloLetrasRegex, "La marca solo debe contener letras.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repitas letras excesivamente."),
+    placa: z.string()
+        .regex(placaRegex, "La placa debe ser 'M' seguida de 6 números y NO puede iniciar con 0."),
+    modelo: z.string()
+        .min(2, "El modelo es muy corto.")
+        .regex(modeloRegex, "El modelo solo acepta letras, números y un guion.")
+        .refine((val) => (val.match(/-/g) || []).length <= 1, "Solo se permite un guion '-' en el modelo.")
+        .refine((val) => (val.match(/\d/g) || []).length <= 4, "El modelo no puede tener más de 4 números.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repitas caracteres más de 2 veces seguidas."),
+    anio: z.coerce.number()
+        .min(1990, "El año no puede ser menor a 1990.")
+        .max(maxYear, `El año no puede ser mayor a ${maxYear}.`),
+    capacidad: z.coerce.number()
+        .min(10, "La capacidad mínima de un microbús es de 10 pasajeros.")
+        .max(60, "La capacidad máxima permitida es 60."),
+    estado: z.string().optional(),
+    fotoUrl: z.string().optional(),
+});
+
+// --- Menú ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
   { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
@@ -41,10 +80,11 @@ const menuItems: MenuItem[] = [
 export default function EditarVehiculoPage() {
   const router = useRouter();
   const params = useParams();
-  const id = params.id as string; // <-- Obtener ID correctamente
+  const id = params.id as string;
   const { toast } = useToast();
   
-  const [loading, setLoading] = useState(true); // <-- Iniciar en true para carga inicial
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false); // Estado separado para el guardado
   const [uploading, setUploading] = useState(false);
   const [fotoUrl, setFotoUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +99,7 @@ export default function EditarVehiculoPage() {
     estado: "activo"
   });
 
-  // Cargar datos del vehículo con autenticación
+  // Cargar datos del vehículo
   useEffect(() => {
     const fetchVehiculo = async () => {
       if (!id) {
@@ -98,7 +138,7 @@ export default function EditarVehiculoPage() {
           marca: data.marca || "",
           modelo: data.modelo || "",
           anio: data.anio?.toString() || "",
-          capacidad: data.capacidad?.toString() || "",
+          capacidad: data.capacidad?.toString() || "10",
           estado: data.estado || "activo"
         });
         
@@ -107,11 +147,7 @@ export default function EditarVehiculoPage() {
       } catch (err: any) {
         console.error("Error cargando vehículo:", err);
         setError(err.message);
-        toast({ 
-          title: "Error", 
-          description: err.message, 
-          variant: "destructive" 
-        });
+        toast({ title: "Error", description: err.message, variant: "destructive" });
       } finally {
         setLoading(false);
       }
@@ -119,11 +155,6 @@ export default function EditarVehiculoPage() {
 
     fetchVehiculo();
   }, [id, toast]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
 
   // Subida de Imagen
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,24 +164,8 @@ export default function EditarVehiculoPage() {
       setUploading(true);
       const file = e.target.files[0];
 
-      // Validaciones
-      if (!file.type.startsWith('image/')) {
-        toast({ 
-          title: "Error", 
-          description: "Solo se permiten archivos de imagen", 
-          variant: "destructive" 
-        });
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        toast({ 
-          title: "Error", 
-          description: "La imagen no puede ser mayor a 5MB", 
-          variant: "destructive" 
-        });
-        return;
-      }
+      if (!file.type.startsWith('image/')) throw new Error("Solo se permiten archivos de imagen");
+      if (file.size > 5 * 1024 * 1024) throw new Error("La imagen no puede ser mayor a 5MB");
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -164,18 +179,11 @@ export default function EditarVehiculoPage() {
 
       const { data } = supabase.storage.from('vehiculos').getPublicUrl(filePath);
       setFotoUrl(data.publicUrl);
-      toast({ 
-        title: "Imagen actualizada", 
-        description: "Recuerda guardar los cambios." 
-      });
+      toast({ title: "Imagen actualizada", description: "Recuerda guardar los cambios." });
 
     } catch (error: any) {
       console.error("Error subiendo imagen:", error);
-      toast({ 
-        title: "Error al subir imagen", 
-        description: error.message, 
-        variant: "destructive" 
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setUploading(false);
     }
@@ -185,46 +193,38 @@ export default function EditarVehiculoPage() {
     setFotoUrl("");
   };
 
-  // Guardar Cambios con autenticación
+  // Guardar Cambios
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
 
     try {
+      // 1. VALIDACIÓN ZOD
+      const datosParaValidar = {
+          ...formData,
+          placa: formData.placa.replace(/\s/g, ''), 
+          anio: Number(formData.anio),
+          capacidad: Number(formData.capacidad),
+          fotoUrl: fotoUrl
+      };
+
+      const valid = vehiculoSchema.parse(datosParaValidar);
+
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({ 
-          title: "Error", 
-          description: "No hay sesión activa", 
-          variant: "destructive" 
-        });
-        return;
-      }
+      if (!session) throw new Error("No hay sesión activa");
 
       const token = session.access_token;
 
-      // Validaciones
-      if (!formData.nombre.trim() || !formData.placa.trim()) {
-        toast({ 
-          title: "Error", 
-          description: "Nombre y placa son campos obligatorios", 
-          variant: "destructive" 
-        });
-        return;
-      }
-
       const payload = {
-        nombre: formData.nombre.trim(),
-        placa: formData.placa.trim().toUpperCase(),
-        marca: formData.marca.trim() || undefined,
-        modelo: formData.modelo.trim() || undefined,
-        anio: formData.anio ? parseInt(formData.anio) : undefined,
-        capacidad: formData.capacidad ? parseInt(formData.capacidad) : undefined,
-        estado: formData.estado,
-        fotoUrl: fotoUrl || undefined,
+        nombre: valid.nombre.trim(),
+        placa: valid.placa, 
+        marca: valid.marca.trim(),
+        modelo: valid.modelo.trim(),
+        anio: valid.anio,
+        capacidad: valid.capacidad,
+        estado: valid.estado,
+        fotoUrl: valid.fotoUrl || null,
       };
-
-      console.log("Actualizando vehículo:", payload);
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos/${id}`, {
         method: 'PATCH',
@@ -240,41 +240,25 @@ export default function EditarVehiculoPage() {
         throw new Error(errorData.message || `Error del servidor: ${response.status}`);
       }
 
-      toast({ 
-        title: "Vehículo Actualizado", 
-        description: "Los cambios se guardaron correctamente." 
-      });
-      
+      toast({ title: "¡Vehículo Actualizado!", description: "Los cambios se guardaron correctamente.", className: "bg-green-600 text-white" });
       router.push("/dashboard/propietario/vehiculos");
       router.refresh();
 
     } catch (err: any) {
       console.error("Error guardando:", err);
-      toast({ 
-        title: "Error al guardar", 
-        description: err.message, 
-        variant: "destructive" 
-      });
+      const mensaje = err instanceof z.ZodError ? err.errors[0].message : err.message;
+      toast({ title: "Error de Validación", description: mensaje, variant: "destructive" });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  // Estados de carga y error
   if (loading) {
     return (
       <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
-        <div className="space-y-6">
-          <Link href="/dashboard/propietario/vehiculos">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Volver a la lista
-            </Button>
-          </Link>
-          <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <p className="ml-3 text-muted-foreground">Cargando vehículo...</p>
-          </div>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="ml-3 text-muted-foreground">Cargando vehículo...</p>
         </div>
       </DashboardLayout>
     );
@@ -283,21 +267,13 @@ export default function EditarVehiculoPage() {
   if (error) {
     return (
       <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
-        <div className="space-y-6">
-          <Link href="/dashboard/propietario/vehiculos">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Volver a la lista
-            </Button>
-          </Link>
-          <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
-            <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-            <h3 className="text-lg font-bold text-red-700 mb-2">Error al cargar vehículo</h3>
-            <p className="text-muted-foreground max-w-md">{error}</p>
-            <Button className="mt-4" onClick={() => router.push("/dashboard/propietario/vehiculos")}>
-              Volver a la lista
-            </Button>
-          </div>
+        <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
+          <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+          <h3 className="text-lg font-bold text-red-700 mb-2">Error al cargar vehículo</h3>
+          <p className="text-muted-foreground max-w-md">{error}</p>
+          <Button className="mt-4" onClick={() => router.push("/dashboard/propietario/vehiculos")}>
+            Volver a la lista
+          </Button>
         </div>
       </DashboardLayout>
     );
@@ -307,10 +283,7 @@ export default function EditarVehiculoPage() {
     <DashboardLayout title="Editar Vehículo" menuItems={menuItems}>
       <div className="space-y-6">
         <Link href="/dashboard/propietario/vehiculos">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver a la lista
-          </Button>
+          <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-2" /> Volver a la lista</Button>
         </Link>
 
         <Card>
@@ -321,7 +294,7 @@ export default function EditarVehiculoPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               
-              {/* Sección Foto */}
+              {/* FOTO */}
               <div className="space-y-2">
                   <Label>Fotografía de la Unidad</Label>
                   <div className="flex items-start gap-6 border p-4 rounded-lg bg-gray-50 dark:bg-gray-900/20">
@@ -331,12 +304,7 @@ export default function EditarVehiculoPage() {
                           ) : fotoUrl ? (
                               <>
                                 <img src={fotoUrl} alt="Vista previa" className="h-full w-full object-cover" />
-                                <button 
-                                    type="button"
-                                    onClick={handleRemoveImage}
-                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                                    title="Quitar foto"
-                                >
+                                <button type="button" onClick={handleRemoveImage} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600" title="Quitar foto">
                                     <X className="h-3 w-3" />
                                 </button>
                               </>
@@ -347,123 +315,160 @@ export default function EditarVehiculoPage() {
                               </div>
                           )}
                       </div>
-                      
                       <div className="flex-1 space-y-2">
-                          <p className="text-sm text-muted-foreground">
-                              Cambia la foto si la unidad ha sido renovada o pintada.
-                          </p>
+                          <p className="text-sm text-muted-foreground">Cambia la foto si la unidad ha sido renovada o pintada.</p>
                           <Label htmlFor="foto-upload" className="cursor-pointer inline-flex">
                               <div className="flex items-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-4 py-2 rounded-md text-sm font-medium transition-colors">
-                                  <Upload className="h-4 w-4" />
-                                  {fotoUrl ? "Cambiar Foto" : "Subir Foto"}
+                                  <Upload className="h-4 w-4" /> {fotoUrl ? "Cambiar Foto" : "Subir Foto"}
                               </div>
-                              <Input 
-                                  id="foto-upload" 
-                                  type="file" 
-                                  accept="image/*" 
-                                  className="hidden" 
-                                  onChange={handleImageUpload}
-                                  disabled={uploading || loading}
-                              />
+                              <Input id="foto-upload" type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading || saving} />
                           </Label>
                       </div>
                   </div>
               </div>
 
-              {/* Campos del formulario */}
               <div className="grid gap-4 md:grid-cols-2">
+                {/* NOMBRE (Auto Capitalize) */}
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre o Apodo *</Label>
                   <Input 
                     id="nombre" 
-                    name="nombre" 
+                    name="nombre"
+                    placeholder="Ej: Microbús 01" 
                     value={formData.nombre} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                        if (/(.)\1\1/.test(val)) return;
+                        const valFormatted = val.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
+                        setFormData({ ...formData, nombre: valFormatted });
+                    }} 
+                    required disabled={saving}
                   />
+                  <p className="text-[10px] text-muted-foreground">Solo letras. Primera mayúscula.</p>
                 </div>
-                 <div className="space-y-2">
+
+                {/* PLACA (Validación estricta) */}
+                <div className="space-y-2">
                   <Label htmlFor="placa">Placa *</Label>
                    <Input 
                     id="placa" 
-                    name="placa" 
+                    name="placa"
+                    placeholder="M 123 456" 
                     value={formData.placa} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
+                    maxLength={7} 
+                    onChange={(e) => {
+                        let val = e.target.value.toUpperCase();
+                        if (!val.startsWith("M")) {
+                            val = "M" + val.replace(/[^0-9]/g, "");
+                        } else {
+                            val = "M" + val.substring(1).replace(/[^0-9]/g, "");
+                        }
+                        // Bloqueo visual de 0 inicial
+                        if (val.length > 1 && val[1] === '0') {
+                            val = val.slice(0, 1) + val.slice(2);
+                        }
+                        setFormData({ ...formData, placa: val });
+                    }} 
+                    required disabled={saving}
                   />
+                  <p className="text-[10px] text-muted-foreground">Formato: M seguido de 6 dígitos (No 0 inicial).</p>
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
+                 {/* MARCA */}
                  <div className="space-y-2">
                   <Label htmlFor="marca">Marca</Label>
                   <Input 
                     id="marca" 
-                    name="marca" 
+                    name="marca"
+                    placeholder="Ej: Toyota" 
                     value={formData.marca} 
-                    onChange={handleChange} 
-                    disabled={loading}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                        if (/(.)\1\1/.test(val)) return;
+                        const valFormatted = val.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
+                        setFormData({ ...formData, marca: valFormatted });
+                    }} 
+                    disabled={saving}
                   />
                 </div>
+
+                {/* MODELO */}
                 <div className="space-y-2">
                   <Label htmlFor="modelo">Modelo</Label>
                   <Input 
                     id="modelo" 
                     name="modelo" 
+                    placeholder="Ej: Hiace-2024" 
                     value={formData.modelo} 
-                    onChange={handleChange} 
-                    disabled={loading}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        if (!/^[a-zA-Z0-9\s-]*$/.test(val)) return;
+                        if ((val.match(/-/g) || []).length > 1) return; 
+                        if ((val.match(/\d/g) || []).length > 4) return; 
+                        if (/(.)\1\1/.test(val)) return; 
+                        setFormData({ ...formData, modelo: val });
+                    }} 
+                    disabled={saving}
                   />
+                  <p className="text-[10px] text-muted-foreground">Letras, números (máx 4) y un guion.</p>
                 </div>
               </div>
 
                <div className="grid gap-4 md:grid-cols-2">
+                {/* AÑO - SIN TRIANGULITOS */}
                 <div className="space-y-2">
                   <Label htmlFor="anio">Año</Label>
                   <Input 
                     id="anio" 
                     name="anio" 
                     type="number" 
+                    placeholder={`1990 - ${maxYear}`}
                     value={formData.anio} 
-                    onChange={handleChange} 
-                    disabled={loading}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.length > 4) return;
+                        setFormData({ ...formData, anio: val });
+                    }} 
+                    disabled={saving}
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
+
+                {/* CAPACIDAD - MIN 10 */}
                 <div className="space-y-2">
                   <Label htmlFor="capacidad">Capacidad (Asientos)</Label>
                   <Input 
                     id="capacidad" 
                     name="capacidad" 
                     type="number" 
+                    placeholder="10 - 60"
+                    min={10} // BLOQUEO VISUAL
+                    max={60}
                     value={formData.capacidad} 
-                    onChange={handleChange} 
-                    disabled={loading}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.length > 2) return; 
+                        setFormData({ ...formData, capacidad: val });
+                    }} 
+                    disabled={saving}
                   />
+                  <p className="text-[10px] text-muted-foreground">Mínimo 10 asientos.</p>
                 </div>
               </div>
 
-              {/* Campo estado oculto */}
-              <input 
-                type="hidden" 
-                name="estado" 
-                value={formData.estado} 
-              />
+              <input type="hidden" name="estado" value={formData.estado} />
 
               <div className="flex gap-3 pt-4">
-                <Button type="submit" disabled={loading || uploading}>
-                  {loading ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                      <Save className="h-4 w-4 mr-2" />
-                  )}
-                  {loading ? "Guardando..." : "Guardar Cambios"}
+                <Button type="submit" disabled={saving || uploading}>
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  {saving ? "Guardando..." : "Guardar Cambios"}
                 </Button>
                 <Link href="/dashboard/propietario/vehiculos">
-                    <Button type="button" variant="outline" disabled={loading}>
-                      Cancelar
-                    </Button>
+                    <Button type="button" variant="outline" disabled={saving}>Cancelar</Button>
                 </Link>
               </div>
             </form>

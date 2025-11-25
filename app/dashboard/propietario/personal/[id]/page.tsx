@@ -18,32 +18,56 @@ import {
     Bell, 
     BarChart3, 
     TrendingDown,
-    Loader2
+    Loader2,
+    Smartphone
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // Importar Supabase
+import { supabase } from "@/lib/supabase"; 
+import { z } from "zod";
 
-// --- TIPO PARA EL VEHÍCULO CARGADO ---
+// --- 1. REGLAS DE NEGOCIO Y SEGURIDAD (Idénticas a Nuevo Personal) ---
+
+const nombreRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
+const telefonoNicaRegex = /^[578][0-9]{7}$/; 
+
+const personalSchema = z.object({
+    nombre: z.string()
+        .min(3, "El nombre es muy corto.")
+        .max(60, "El nombre es muy largo.")
+        .regex(nombreRegex, "El nombre solo debe contener letras.")
+        .refine((val) => !/(.)\1\1/.test(val), {
+            message: "No puedes repetir la misma letra más de 2 veces seguidas.",
+        })
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), {
+            message: "El nombre debe comenzar con una letra mayúscula.",
+        }),
+    telefono: z.string()
+        .regex(telefonoNicaRegex, "El teléfono debe ser válido (8 dígitos, inicia con 5, 7 u 8)."),
+    puesto: z.enum(["Asistente", "Chofer"], {
+        errorMap: () => ({ message: "El puesto solo puede ser Asistente o Chofer." }),
+    }),
+    salario: z.coerce.number()
+        .gte(4500, "El salario debe ser mayor o igual a C$4,500.")
+        .lte(12000, "El salario no puede superar los C$12,000."),
+    vehiculoId: z.string().optional(),
+});
+
+// --- TIPOS ---
 type Vehiculo = {
   id: string;
   nombre: string;
 };
 
-// --- TIPO PERSONAL (ACTUALIZADO) ---
-export type Personal = {
+type Personal = {
   id: string;
   nombre: string;
   puesto: string;
-  contacto: string;
+  telefono: string; // Normalizamos 'contacto' a 'telefono' en el form
   salario: number;
   fechaContratacion: string; 
   estado: "activo" | "inactivo" | "eliminado";
   vehiculoId: string | null;
-  vehiculo?: { 
-    id: string;
-    nombre: string;
-  }
 };
 
 // --- Menú ---
@@ -68,33 +92,28 @@ export default function EditarPersonalPage() {
   const [loadingData, setLoadingData] = useState(true);
   
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-  const [vehiculosLoading, setVehiculosLoading] = useState(true);
+  
+  // Estado local del formulario
+  const [formData, setFormData] = useState({
+    nombre: "",
+    puesto: "Asistente",
+    telefono: "",
+    salario: "",
+    vehiculoId: "N/A",
+  });
 
-  const [formData, setFormData] = useState<Partial<Personal>>({});
-
-  // --- Función para obtener headers con autenticación ---
+  // --- Función Auth Headers ---
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    
-    if (!token) {
-      throw new Error("No hay sesión activa");
-    }
-
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
+    if (!token) throw new Error("No hay sesión activa");
+    return { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
   };
 
-  // --- Cargar datos del empleado Y los vehículos ---
+  // --- Cargar Datos ---
   useEffect(() => {
     if (!id) {
-      toast({
-        title: "Error",
-        description: "ID de empleado no válido",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "ID no válido", variant: "destructive" });
       router.push("/dashboard/propietario/personal");
       return;
     }
@@ -102,108 +121,66 @@ export default function EditarPersonalPage() {
     const fetchDatos = async () => {
       try {
         setLoadingData(true);
-        
-        // Obtener headers de autenticación
         const headers = await getAuthHeaders();
 
-        // Hacer ambas peticiones en paralelo
         const [personalRes, vehiculosRes] = await Promise.all([
           fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal/${id}`, { headers }),
           fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers })
         ]);
         
-        // Verificar respuesta del empleado
-        if (!personalRes.ok) {
-          if (personalRes.status === 404) {
-            throw new Error("No se pudo encontrar al empleado");
-          } else if (personalRes.status === 401) {
-            throw new Error("No autorizado - por favor inicia sesión nuevamente");
-          } else {
-            throw new Error(`Error del servidor: ${personalRes.status}`);
-          }
+        if (!personalRes.ok) throw new Error("No se pudo cargar al empleado");
+
+        // Cargar Vehículos (sin bloquear si falla)
+        if (vehiculosRes.ok) {
+            setVehiculos(await vehiculosRes.json());
         }
 
-        // Verificar respuesta de vehículos
-        if (!vehiculosRes.ok) {
-          console.warn("No se pudieron cargar los vehículos, pero continuamos...");
-          // No lanzamos error aquí para no bloquear la edición
-        }
-
-        const data: Personal = await personalRes.json();
-        const dataVehiculos: Vehiculo[] = vehiculosRes.ok ? await vehiculosRes.json() : [];
+        const data = await personalRes.json();
         
-        setVehiculos(dataVehiculos);
+        // Mapear datos al estado del formulario
         setFormData({
-          ...data,
-          fechaContratacion: data.fechaContratacion ? new Date(data.fechaContratacion).toISOString().split('T')[0] : "",
-          salario: data.salario || 0,
+          nombre: data.nombre || "",
+          puesto: data.puesto || "Asistente",
+          // La API puede devolver 'contacto' o 'telefono'
+          telefono: data.telefono || data.contacto || "",
+          salario: data.salario ? data.salario.toString() : "4500",
           vehiculoId: data.vehiculoId || "N/A"
         });
 
       } catch (err: any) {
-        console.error("Error al cargar datos:", err);
-        toast({ 
-          title: "Error al cargar", 
-          description: err.message, 
-          variant: "destructive" 
-        });
+        console.error("Error:", err);
+        toast({ title: "Error al cargar", description: err.message, variant: "destructive" });
         router.push("/dashboard/propietario/personal");
       } finally {
         setLoadingData(false);
-        setVehiculosLoading(false);
       }
     };
-    
     fetchDatos();
   }, [id, router, toast]);
 
-  // --- Manejadores de formulario ---
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
+  // --- Manejadores ---
   const handleSelectChange = (name: string, value: string) => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Enviar actualización a la API ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      // Validaciones básicas
-      if (!formData.nombre?.trim()) {
-        toast({
-          title: "Error de validación",
-          description: "El nombre es obligatorio",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      if (!formData.puesto) {
-        toast({
-          title: "Error de validación",
-          description: "El puesto es obligatorio",
-          variant: "destructive"
-        });
-        return;
-      }
+      // 1. VALIDACIÓN SEGURA CON ZOD
+      const valid = personalSchema.parse(formData);
 
       const payload = {
-        nombre: formData.nombre.trim(),
-        puesto: formData.puesto,
-        contacto: formData.contacto?.trim() || null,
-        salario: formData.salario ? Number(formData.salario) : null,
-        fechaContratacion: formData.fechaContratacion,
+        nombre: valid.nombre.trim(),
+        puesto: valid.puesto,
+        telefono: valid.telefono.trim(),
+        salario: valid.salario,
         vehiculoId: formData.vehiculoId === "N/A" ? null : formData.vehiculoId,
+        // Nota: No enviamos fechaContratacion para mantener la original intacta
       };
 
-      // Obtener headers con autenticación
       const headers = await getAuthHeaders();
-
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/personal/${id}`, {
         method: 'PATCH',
         headers,
@@ -212,26 +189,16 @@ export default function EditarPersonalPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "No se pudo actualizar el empleado");
+        throw new Error(errorData.message || "No se pudo actualizar");
       }
 
-      toast({ 
-        title: "¡Actualizado!", 
-        description: "El empleado se ha guardado correctamente." 
-      });
-      
-      // Redirigir después de un breve delay
-      setTimeout(() => {
-        router.push("/dashboard/propietario/personal");
-      }, 1000);
+      toast({ title: "¡Actualizado!", description: "Datos del empleado guardados correctamente.", className: "bg-green-600 text-white" });
+      setTimeout(() => { router.push("/dashboard/propietario/personal"); }, 1000);
 
     } catch (err: any) {
-      console.error("Error al guardar:", err);
-      toast({ 
-        title: "Error al guardar", 
-        description: err.message, 
-        variant: "destructive" 
-      });
+      console.error("Error:", err);
+      const mensaje = err instanceof z.ZodError ? err.errors[0].message : err.message;
+      toast({ title: "Error de Validación", description: mensaje, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -242,7 +209,7 @@ export default function EditarPersonalPage() {
       <DashboardLayout title="Editar Personal" menuItems={menuItems}>
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <span className="ml-2">Cargando datos del empleado...</span>
+          <span className="ml-2">Cargando datos...</span>
         </div>
       </DashboardLayout>
     );
@@ -251,141 +218,148 @@ export default function EditarPersonalPage() {
   return (
     <DashboardLayout title="Editar Personal" menuItems={menuItems}>
       <div className="space-y-6">
-        <Link href="/dashboard/propietario/personal">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver a la lista
-          </Button>
-        </Link>
+        <div className="flex justify-between">
+            <Link href="/dashboard/propietario/personal">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" /> Volver a la lista
+              </Button>
+            </Link>
+        </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Editar Empleado</CardTitle>
-            <CardDescription>Ajusta los detalles del miembro del personal.</CardDescription>
+            <CardTitle>Editar Colaborador Seguro</CardTitle>
+            <CardDescription>Actualiza los datos del empleado.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-6">
               
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-6 md:grid-cols-2">
+                
+                {/* NOMBRE VALIDADO */}
                 <div className="space-y-2">
                   <Label htmlFor="nombre">Nombre Completo *</Label>
                   <Input 
                     id="nombre" 
-                    name="nombre"
-                    placeholder="Ej: Ana García" 
-                    value={formData.nombre || ''} 
-                    onChange={handleChange} 
+                    name="nombre" 
+                    placeholder="Ej: Carlos Pérez" 
+                    value={formData.nombre} 
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        // 1. Whitelist (Solo letras y espacios)
+                        if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                        // 2. Anti-repetición
+                        if (/(.)\1\1/.test(val)) return;
+
+                        // 3. Auto-capitalizar (Title Case)
+                        const valFormatted = val.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
+
+                        setFormData({ ...formData, nombre: valFormatted });
+                    }} 
                     required 
                     disabled={loading}
                   />
+                  <p className="text-[10px] text-muted-foreground">Solo letras. Formato Nombre Propio.</p>
                 </div>
+
+                {/* TELÉFONO VALIDADO */}
                 <div className="space-y-2">
-                  <Label htmlFor="puesto">Puesto *</Label>
-                  <Select 
-                    value={formData.puesto || ''} 
-                    onValueChange={(value) => handleSelectChange("puesto", value)}
-                    required
-                    disabled={loading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un puesto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Chofer">Chofer</SelectItem>
-                      <SelectItem value="Asistente">Asistente</SelectItem>
-                      <SelectItem value="Administrativo">Administrativo</SelectItem>
-                      <SelectItem value="Otro">Otro</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="telefono">Teléfono (WhatsApp) *</Label>
+                  <div className="relative">
+                    <Smartphone className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                    <Input 
+                        id="telefono" 
+                        name="telefono" 
+                        placeholder="88888888" 
+                        className="pl-8"
+                        value={formData.telefono} 
+                        maxLength={8}
+                        onChange={(e) => {
+                            let val = e.target.value.replace(/\D/g, '');
+                            if (val.length === 1 && !['5','7','8'].includes(val)) return;
+                            setFormData({ ...formData, telefono: val });
+                        }} 
+                        required 
+                        disabled={loading}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">8 dígitos (Inicia con 5, 7 u 8).</p>
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="contacto">Contacto (Teléfono)</Label>
-                  <Input 
-                    id="contacto" 
-                    name="contacto"
-                    type="tel"
-                    placeholder="Ej: 8888-8888" 
-                    value={formData.contacto || ''} 
-                    onChange={handleChange} 
+                  <Label htmlFor="puesto">Puesto / Rol *</Label>
+                  <Select 
+                    value={formData.puesto} 
+                    onValueChange={(value) => handleSelectChange("puesto", value)}
                     disabled={loading}
-                  />
+                  >
+                    <SelectTrigger><SelectValue placeholder="Selecciona un puesto" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="Asistente">Asistente</SelectItem>
+                        <SelectItem value="Chofer">Chofer</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                {/* SALARIO VALIDADO */}
                 <div className="space-y-2">
-                  <Label htmlFor="salario">Salario (C$)</Label>
+                  <Label htmlFor="salario">Salario Mensual (C$) *</Label>
                   <Input 
                     id="salario" 
                     name="salario" 
                     type="number" 
-                    step="0.01"
-                    placeholder="Ej: 8000.00" 
-                    value={formData.salario || ''} 
-                    onChange={handleChange} 
+                    placeholder="4500 - 12000" 
+                    min={4500} // Bloqueo visual de flechas
+                    max={12000}
+                    value={formData.salario} 
+                    onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        // Permitir borrar para editar, bloquear negativos y > 12000
+                        if (e.target.value !== "" && val < 0) return;
+                        if (val > 12000) return; 
+                        
+                        setFormData({ ...formData, salario: e.target.value });
+                    }} 
                     disabled={loading}
                   />
+                  <p className="text-[10px] text-muted-foreground">Rango: 4,500 - 12,000 C$.</p>
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="fechaContratacion">Fecha de Contratación</Label>
-                  <Input 
-                    id="fechaContratacion" 
-                    name="fechaContratacion" 
-                    type="date" 
-                    value={formData.fechaContratacion || ''} 
-                    onChange={handleChange} 
-                    disabled={loading}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="vehiculoId">Asignar Vehículo</Label>
-                  <Select 
-                    value={formData.vehiculoId || 'N/A'}
-                    onValueChange={(value) => handleSelectChange("vehiculoId", value)}
-                    disabled={loading || vehiculosLoading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={
-                        vehiculosLoading ? "Cargando vehículos..." : "Asignar a un vehículo"
-                      } />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="N/A">N/A (Sin vehículo fijo)</SelectItem>
-                      {vehiculos.map(v => (
-                        <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Solo se muestran vehículos activos
-                  </p>
-                </div>
+              <div className="grid gap-6 md:grid-cols-2">
+                 {/* VEHÍCULO */}
+                 <div className="space-y-2">
+                    <Label htmlFor="vehiculoId">Vehículo Asignado (Opcional)</Label>
+                    <Select 
+                        value={formData.vehiculoId || "N/A"} 
+                        onValueChange={(value) => handleSelectChange("vehiculoId", value)}
+                        disabled={loading}
+                    >
+                        <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar vehículo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="N/A">Ninguno / No Asignado</SelectItem>
+                            {vehiculos.map(v => (
+                                <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4">
-                <Button type="submit" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Guardando...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Guardar Cambios
-                    </>
-                  )}
-                </Button>
+              <div className="flex justify-end gap-3 pt-4 border-t">
                 <Link href="/dashboard/propietario/personal">
-                  <Button type="button" variant="outline" disabled={loading}>
-                    Cancelar
-                  </Button>
+                    <Button type="button" variant="outline" disabled={loading}>Cancelar</Button>
                 </Link>
+                <Button type="submit" disabled={loading}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Guardar Cambios
+                </Button>
               </div>
+
             </form>
           </CardContent>
         </Card>
