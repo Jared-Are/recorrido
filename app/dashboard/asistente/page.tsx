@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { AsistenteLayout } from "@/components/asistente-layout"
+import { AsistenteLayout } from "@/components/asistente-layout" // Corregido el import
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Bell, ArrowRight, Car, Users, UserCheck, UserX, Loader2, AlertTriangle } from "lucide-react"
+// 👇 Cambiamos Bell por Megaphone
+import { Megaphone, ArrowRight, Car, Users, UserCheck, UserX, Loader2, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase" 
 import Link from "next/link"
@@ -22,7 +23,7 @@ type ResumenDia = {
 export default function AsistenteDashboard() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null); // Estado para capturar el error real
+  const [errorMsg, setErrorMsg] = useState<string | null>(null); 
   const [resumen, setResumen] = useState<ResumenDia | null>(null);
 
   useEffect(() => {
@@ -30,7 +31,6 @@ export default function AsistenteDashboard() {
       setLoading(true);
       setErrorMsg(null);
       try {
-        // 1. OBTENER EL TOKEN DE SESIÓN
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
@@ -38,7 +38,6 @@ export default function AsistenteDashboard() {
             throw new Error("No hay sesión activa. Por favor inicia sesión nuevamente.");
         }
 
-        // 2. ENVIARLO EN LOS HEADERS
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/asistencia/resumen-hoy`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -47,9 +46,7 @@ export default function AsistenteDashboard() {
         });
 
         if (!response.ok) {
-          // 3. LEER EL MENSAJE REAL DEL BACKEND
           const errorData = await response.json().catch(() => ({}));
-          // Usamos el mensaje del backend o un genérico con el código de estado
           const mensaje = errorData.message || `Error del servidor (${response.status}): ${response.statusText}`;
           throw new Error(mensaje);
         }
@@ -58,7 +55,7 @@ export default function AsistenteDashboard() {
         setResumen(data);
       } catch (err: any) {
         console.error("Error en Dashboard:", err);
-        setErrorMsg(err.message); // Guardamos el mensaje para mostrarlo
+        setErrorMsg(err.message); 
         toast({ title: "Error de carga", description: err.message, variant: "destructive" });
       } finally {
         setLoading(false);
@@ -79,7 +76,6 @@ export default function AsistenteDashboard() {
     );
   }
 
-  // --- PANTALLA DE ERROR PERSONALIZADA ---
   if (errorMsg) {
     return (
       <AsistenteLayout title="Panel del Asistente">
@@ -101,10 +97,7 @@ export default function AsistenteDashboard() {
 
   if (!resumen) return null;
 
-  // --- CORRECCIÓN TEMPORAL: Permite entrar al registro aunque ya esté guardado ---
-  // Se deshabilita solo si NO es día lectivo (días de descanso)
   const botonAsistenciaDeshabilitado = !resumen.esDiaLectivo; 
-  // -----------------------------------------------------------------------------
 
   let cardDescription = "Listo para iniciar el recorrido.";
   if (!resumen.esDiaLectivo) cardDescription = `Hoy no hay recorrido: ${resumen.motivoNoLectivo}.`;
@@ -114,11 +107,13 @@ export default function AsistenteDashboard() {
     <AsistenteLayout title="Panel del Asistente">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold tracking-tight">Resumen del Día</h1>
-        <Link href="/dashboard/asistente/avisos">
-            <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-6 w-6" />
+        
+        {/* 👇 AQUÍ EL CAMBIO: Enlace a Avisos con Ícono de Megáfono */}
+        <Link href="/dashboard/asistente/avisos" title="Ver Avisos Generales">
+            <Button variant="ghost" size="icon" className="relative text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+            <Megaphone className="h-6 w-6" />
             {resumen.avisos.length > 0 && (
-                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center animate-bounce">
                 {resumen.avisos.length}
                 </span>
             )}
@@ -142,7 +137,6 @@ export default function AsistenteDashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         
-        {/* TARJETA DE VEHÍCULO */}
         <Card className="overflow-hidden col-span-1 md:col-span-2 lg:col-span-1">
             <div className="flex h-full">
                 <div className="p-6 flex-1 flex flex-col justify-center">

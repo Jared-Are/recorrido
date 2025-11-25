@@ -8,7 +8,6 @@ import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
-// 👇 1. IMPORTAR LA CAMPANA
 import { NotificationsBell } from "@/components/notifications-bell"
 
 interface AsistenteLayoutProps {
@@ -16,6 +15,7 @@ interface AsistenteLayoutProps {
   title: string
 }
 
+// 👇 EXPORTACIÓN NOMBRADA (Asegúrate de que diga 'export function')
 export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
   const router = useRouter()
   const { toast } = useToast()
@@ -31,7 +31,6 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
     }
   }, [])
 
-  // 1. Lógica de Tema
   useEffect(() => {
     const theme = localStorage.getItem("app-theme")
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -55,7 +54,6 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
     }
   }
 
-  // 2. Lógica de Autenticación
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -102,7 +100,7 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
     )
   }
 
-  if (!user && !loading) return null
+  if (!user) return null
 
   const navItems = [
     { title: "Resumen", icon: Users, href: "/dashboard/asistente" },
@@ -115,16 +113,12 @@ export function AsistenteLayout({ children, title }: AsistenteLayoutProps) {
       <header className="bg-card border-b border-border sticky top-0 z-40">
         <div className="flex items-center justify-between px-4 py-3 md:px-6">
           
-          {/* Izquierda: Título y Nombre */}
           <div>
              <h1 className="text-lg font-bold text-foreground leading-none">{title}</h1>
              <p className="text-xs text-muted-foreground mt-1">{user?.name}</p>
           </div>
 
-          {/* Derecha: Acciones */}
           <div className="flex items-center gap-2">
-            
-            {/* 👇 2. ¡AHORA SÍ! LA CAMPANA ESTÁ AQUÍ */}
             <NotificationsBell />
 
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
