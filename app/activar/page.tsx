@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +95,17 @@ function ActivarCuentaContent() {
         setLoading(false);
     }
   };
+
+// Lógica de Camuflaje que debes tener en tu archivo activar/page.tsx
+useEffect(() => {
+    const tokenParam = searchParams.get("token");
+    if (tokenParam) {
+      // Reemplaza la URL en el historial de navegación.
+      // Esto hace que el token NO se guarde en el historial del navegador.
+      window.history.replaceState(null, '', '/activar'); 
+    }
+}, [searchParams]);
+
 
   // --- VISTA 1: ERROR / TOKEN VENCIDO ---
   if (!token || viewState === "error") {

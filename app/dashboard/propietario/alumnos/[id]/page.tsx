@@ -1,490 +1,360 @@
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
-import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-    ArrowLeft, 
-    Save, 
-    Users, 
-    DollarSign, 
-    Bus, 
-    UserCog, 
-    Bell, 
-    BarChart3, 
-    TrendingDown,
-    Loader2 
-} from "lucide-react";
-import Link from "next/link";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase"; // Importar Supabase para autenticación
+// 👇 Importamos 'use' de react para desenvolver los params
+import { useState, useEffect, use } from "react"
+import { useRouter } from "next/navigation"
+import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, ArrowLeft, Save, Loader2, UserCheck, Plus, Trash2 } from "lucide-react"
+import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase"
+import { Separator } from "@/components/ui/separator"
 
-// --- TIPO PARA EL VEHÍCULO CARGADO ---
-type Vehiculo = {
-  id: string;
-  nombre: string;
-};
-
-// --- DEFINICIÓN DEL TIPO ALUMNO (CORREGIDO) ---
-export type Alumno = {
-  id: string;
-  nombre: string;
-  tutor: { // CORREGIDO: Tutor como objeto
-    nombre: string;
-    telefono: string;
-  };
-  grado: string;
-  precio: number;
-  direccion: string; // CORREGIDO: Dirección como campo separado
-  activo: boolean;
-  vehiculoId: string | null;
-  vehiculo?: { 
-    id: string;
-    nombre: string;
-  }
-};
-
-// --- DEFINICIÓN DEL MENÚ COMPLETO ---
 const menuItems: MenuItem[] = [
-  {
-    title: "Gestionar Alumnos",
-    description: "Ver y administrar estudiantes",
-    icon: Users,
-    href: "/dashboard/propietario/alumnos",
-    color: "text-blue-600",
-    bgColor: "bg-blue-50 dark:bg-blue-900/20",
-  },
-  {
-    title: "Gestionar Pagos",
-    description: "Ver historial y registrar pagos",
-    icon: DollarSign,
-    href: "/dashboard/propietario/pagos",
-    color: "text-green-600",
-    bgColor: "bg-green-50 dark:bg-green-900/20",
-  },
-  {
-    title: "Gestionar Gastos",
-    description: "Control de combustible, salarios, etc.",
-    icon: TrendingDown,
-    href: "/dashboard/propietario/gastos",
-    color: "text-pink-600",
-    bgColor: "bg-pink-50 dark:bg-pink-900/20",
-  },
-  {
-    title: "Gestionar Personal",
-    description: "Administrar empleados y choferes",
-    icon: Users,
-    href: "/dashboard/propietario/personal",
-    color: "text-purple-600",
-    bgColor: "bg-purple-50 dark:bg-purple-900/20",
-  },
-  {
-    title: "Gestionar Vehículos",
-    description: "Administrar flota de vehículos",
-    icon: Bus,
-    href: "/dashboard/propietario/vehiculos",
-    color: "text-orange-600",
-    bgColor: "bg-orange-50 dark:bg-orange-900/20",
-  },
-  {
-    title: "Gestionar Usuarios",
-    description: "Administrar accesos al sistema",
-    icon: UserCog,
-    href: "/dashboard/propietario/usuarios",
-    color: "text-indigo-600",
-    bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
-  },
-  {
-    title: "Enviar Avisos",
-    description: "Comunicados a tutores y personal",
-    icon: Bell,
-    href: "/dashboard/propietario/avisos",
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
-  },
-  {
-    title: "Generar Reportes",
-    description: "Estadísticas y análisis",
-    icon: BarChart3,
-    href: "/dashboard/propietario/reportes",
-    color: "text-red-600",
-    bgColor: "bg-red-50 dark:bg-red-900/20",
-  },
-];
+    { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
+    { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
+    { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
+    { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
+    { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
+    { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
+    { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
+    { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
+]
 
-export default function EditarAlumnoPage() {
-  const router = useRouter();
-  const { toast } = useToast();
-  const params = useParams();
-  const id = params.id as string;
+type Vehiculo = { id: string; nombre: string };
 
-  const [loading, setLoading] = useState(false);
-  const [loadingData, setLoadingData] = useState(true);
-  
-  const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
-  
-  // CORREGIDO: Estructura del formulario basada en la API
-  const [formData, setFormData] = useState({
-    nombre: "",
-    tutorNombre: "",
-    tutorTelefono: "",
-    grado: "",
-    direccion: "",
-    vehiculoId: "", 
-    precio: 0,
-  });
-
-  // --- Función para obtener headers con autenticación ---
-  const getAuthHeaders = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
+// 👇 Cambiamos el tipo de params a Promise
+export default function EditarFamiliaPage({ params }: { params: Promise<{ id: string }> }) {
+    // 👇 Desenvolvemos el ID usando el hook 'use'
+    const { id } = use(params);
     
-    if (!token) {
-      throw new Error("No hay sesión activa");
-    }
+    const router = useRouter();
+    const { toast } = useToast();
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    
+    const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
+    
+    const [tutorData, setTutorData] = useState({
+        nombre: "",
+        telefono: "",
+        direccion: "" 
+    });
+    const [tutorId, setTutorId] = useState<string | null>(null);
 
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+    const [hijos, setHijos] = useState<any[]>([]);
+    const [precioFamiliarTotal, setPrecioFamiliarTotal] = useState(0);
+
+    useEffect(() => {
+        const init = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const token = session?.access_token;
+                if (!token) throw new Error("Sesión inválida");
+
+                const headers = { 'Authorization': `Bearer ${token}` };
+                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+                const resVehiculos = await fetch(`${apiUrl}/vehiculos?estado=activo`, { headers });
+                if (resVehiculos.ok) setVehiculos(await resVehiculos.json());
+
+                // 👇 Usamos el 'id' ya desenvelto
+                const resAlumno = await fetch(`${apiUrl}/alumnos/${id}`, { headers });
+                if (!resAlumno.ok) throw new Error("Alumno no encontrado");
+                const alumnoPrincipal = await resAlumno.json();
+
+                const tId = alumnoPrincipal.tutorUserId;
+                setTutorId(tId);
+
+                setTutorData({
+                    nombre: alumnoPrincipal.tutorUser?.nombre || alumnoPrincipal.tutor || "",
+                    telefono: alumnoPrincipal.tutorUser?.telefono || alumnoPrincipal.contacto || "",
+                    direccion: alumnoPrincipal.direccion || ""
+                });
+
+                let todosLosHijos = [alumnoPrincipal];
+                if (tId) {
+                    const resTodos = await fetch(`${apiUrl}/alumnos`, { headers });
+                    if (resTodos.ok) {
+                        const listaCompleta = await resTodos.json();
+                        todosLosHijos = listaCompleta.filter((a: any) => a.tutorUserId === tId);
+                    }
+                }
+
+                const hijosFormateados = todosLosHijos.map((h: any) => ({
+                    id: h.id,
+                    nombre: h.nombre,
+                    grado: h.grado,
+                    vehiculoId: h.vehiculo?.id || h.vehiculoId || "",
+                    precio: Number(h.precio),
+                    activo: h.activo
+                }));
+
+                setHijos(hijosFormateados);
+                const total = hijosFormateados.reduce((sum: number, h: any) => sum + h.precio, 0);
+                setPrecioFamiliarTotal(total);
+
+            } catch (error: any) {
+                toast({ title: "Error", description: error.message, variant: "destructive" });
+                router.push("/dashboard/propietario/alumnos");
+            } finally {
+                setLoading(false);
+            }
+        };
+        init();
+    }, [id, toast, router]); // Dependencia actualizada a 'id'
+
+    const handleChangeHijo = (index: number, field: string, value: any) => {
+        const nuevos = [...hijos];
+        nuevos[index] = { ...nuevos[index], [field]: value };
+        setHijos(nuevos);
     };
-  };
 
-  // --- OBTENER DATOS DEL ALUMNO Y VEHÍCULOS (CORREGIDO) ---
-  useEffect(() => {
-    if (!id) {
-      toast({
-        title: "Error",
-        description: "ID de alumno no válido",
-        variant: "destructive"
-      });
-      router.push("/dashboard/propietario/alumnos");
-      return;
-    }
-
-    const fetchDatos = async () => {
-      try {
-        setLoadingData(true);
-        
-        // Obtener headers de autenticación
-        const headers = await getAuthHeaders();
-
-        const [alumnoRes, vehiculosRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, { headers }),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/vehiculos?estado=activo`, { headers })
-        ]);
-
-        if (!alumnoRes.ok) {
-          if (alumnoRes.status === 404) {
-            throw new Error("No se pudo encontrar el alumno");
-          } else if (alumnoRes.status === 401) {
-            throw new Error("No autorizado - por favor inicia sesión nuevamente");
-          } else {
-            throw new Error(`Error del servidor: ${alumnoRes.status}`);
-          }
-        }
-
-        if (!vehiculosRes.ok) {
-          console.warn("No se pudieron cargar los vehículos, pero continuamos...");
-        }
-
-        const data: Alumno = await alumnoRes.json();
-        const dataVehiculos: Vehiculo[] = vehiculosRes.ok ? await vehiculosRes.json() : [];
-
-        setVehiculos(dataVehiculos);
-        
-        // CORREGIDO: Mapear los datos correctamente
-        setFormData({
-          nombre: data.nombre || "",
-          tutorNombre: data.tutor?.nombre || "",
-          tutorTelefono: data.tutor?.telefono || "",
-          grado: data.grado || "",
-          direccion: data.direccion || "",
-          vehiculoId: data.vehiculoId || "",
-          precio: data.precio || 0,
-        });
-
-      } catch (err: any) {
-        console.error("Error al cargar datos:", err);
-        toast({
-          title: "Error al cargar",
-          description: err.message,
-          variant: "destructive",
-        });
-        router.push("/dashboard/propietario/alumnos");
-      } finally {
-        setLoadingData(false);
-      }
+    const agregarHermano = () => {
+        setHijos([...hijos, { nombre: "", grado: "", vehiculoId: "", precio: 0, activo: true }]);
     };
-    fetchDatos();
-  }, [id, router, toast]);
 
-  // --- MANEJADORES DE FORMULARIO ---
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+    const eliminarHijo = async (index: number) => {
+        const hijo = hijos[index];
+        if (hijo.id) {
+            if (!confirm(`¿Estás seguro de eliminar a ${hijo.nombre}? Esto borrará su historial.`)) return;
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${hijo.id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                });
+                toast({ title: "Alumno eliminado" });
+            } catch (e) {
+                console.error(e);
+                return; 
+            }
+        }
+        const nuevos = [...hijos];
+        nuevos.splice(index, 1);
+        setHijos(nuevos);
+        const total = nuevos.reduce((sum: number, h: any) => sum + Number(h.precio), 0);
+        setPrecioFamiliarTotal(total);
+    };
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-  
-  // --- ACTUALIZAR EN LA API (CORREGIDO) ---
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+    const redistribuirPrecio = (nuevoTotal: number) => {
+        setPrecioFamiliarTotal(nuevoTotal);
+        const count = hijos.length;
+        if (count === 0) return;
+        
+        const base = Math.floor(nuevoTotal / count);
+        const resto = nuevoTotal % count;
+        
+        const nuevosHijos = hijos.map((h, i) => ({
+            ...h,
+            precio: base + (i === 0 ? resto : 0)
+        }));
+        setHijos(nuevosHijos);
+    };
 
-    try {
-      // Validaciones
-      if (!formData.nombre.trim()) {
-        toast({ title: "Error de validación", description: "El nombre es obligatorio.", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSaving(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-      if (!formData.tutorNombre.trim()) {
-        toast({ title: "Error de validación", description: "El nombre del tutor es obligatorio.", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+            if (tutorId) {
+                await fetch(`${apiUrl}/users/${tutorId}`, {
+                    method: 'PATCH',
+                    headers,
+                    body: JSON.stringify({
+                        nombre: tutorData.nombre,
+                        telefono: tutorData.telefono
+                    })
+                });
+            }
 
-      if (!formData.tutorTelefono.trim()) {
-        toast({ title: "Error de validación", description: "El teléfono del tutor es obligatorio.", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+            for (const hijo of hijos) {
+                const payload = {
+                    nombre: hijo.nombre,
+                    grado: hijo.grado,
+                    vehiculoId: hijo.vehiculoId,
+                    precio: hijo.precio,
+                    direccion: tutorData.direccion,
+                    activo: hijo.activo,
+                    tutor: tutorId ? undefined : tutorData.nombre,
+                    contacto: tutorId ? undefined : tutorData.telefono,
+                    ...( !hijo.id && { tutorUserId: tutorId }) 
+                };
 
-      if (!formData.direccion.trim()) {
-        toast({ title: "Error de validación", description: "La dirección es obligatoria.", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+                if (hijo.id) {
+                    await fetch(`${apiUrl}/alumnos/${hijo.id}`, {
+                        method: 'PATCH', headers, body: JSON.stringify(payload)
+                    });
+                } else {
+                    const createPayload = {
+                        ...payload,
+                        tutor: { nombre: tutorData.nombre, telefono: tutorData.telefono }
+                    };
+                    await fetch(`${apiUrl}/alumnos`, {
+                        method: 'POST', headers, body: JSON.stringify(createPayload)
+                    });
+                }
+            }
+            
+            toast({ title: "Familia Actualizada", description: "Todos los cambios se han guardado." });
+            router.push("/dashboard/propietario/alumnos");
 
-      if (!formData.vehiculoId) {
-        toast({ title: "Error de validación", description: "Por favor, selecciona un vehículo.", variant: "destructive" });
-        setLoading(false);
-        return;
-      }
+        } catch (error: any) {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        } finally {
+            setSaving(false);
+        }
+    };
 
-      // CORREGIDO: Payload con estructura correcta
-      const payload = {
-        nombre: formData.nombre.trim(),
-        tutor: { // Tutor como objeto
-          nombre: formData.tutorNombre.trim(),
-          telefono: formData.tutorTelefono.trim()
-        },
-        grado: formData.grado,
-        direccion: formData.direccion.trim(), // Dirección como campo separado
-        vehiculoId: formData.vehiculoId, 
-        precio: Number(formData.precio),
-      };
+    if (loading) return <div className="flex h-screen justify-center items-center"><Loader2 className="animate-spin text-primary" /></div>;
 
-      // Obtener headers con autenticación
-      const headers = await getAuthHeaders();
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos/${id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(payload), 
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "No se pudo actualizar el alumno");
-      }
-
-      toast({
-        title: "¡Actualizado!",
-        description: "El alumno se ha guardado correctamente.",
-      });
-      
-      // Redirigir después de un breve delay
-      setTimeout(() => {
-        router.push("/dashboard/propietario/alumnos");
-      }, 1000);
-
-    } catch (err: any) {
-      console.error("Error al guardar:", err);
-      toast({
-        title: "Error al guardar",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loadingData) {
     return (
-      <DashboardLayout title="Editar Alumno" menuItems={menuItems}>
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <span className="ml-2">Cargando datos del alumno...</span>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  // --- RENDERIZADO DEL FORMULARIO DE EDICIÓN (CORREGIDO) ---
-  return (
-    <DashboardLayout title="Editar Alumno" menuItems={menuItems}>
-      <div className="space-y-6">
-        <Link href="/dashboard/propietario/alumnos">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Volver a la lista
-          </Button>
-        </Link>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Editar Alumno</CardTitle>
-            <CardDescription>Actualiza los datos de {formData.nombre}.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="nombre">Nombre Completo *</Label>
-                  <Input 
-                    id="nombre" 
-                    name="nombre" 
-                    value={formData.nombre} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
-                  />
+        <DashboardLayout title="Editar Familia" menuItems={menuItems}>
+            <div className="space-y-6 max-w-5xl mx-auto">
+                <div className="flex justify-between items-center">
+                    <Link href="/dashboard/propietario/alumnos">
+                        <Button variant="ghost" size="sm"><ArrowLeft className="mr-2 h-4 w-4" /> Volver</Button>
+                    </Link>
+                    {/* SIN COLORES LLAMATIVOS */}
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-1 rounded-full border">
+                        <UserCheck className="w-4 h-4" /> Editando Grupo Familiar
+                    </div>
                 </div>
 
-                {/* CORREGIDO: Campo separado para nombre del tutor */}
-                <div className="space-y-2">
-                  <Label htmlFor="tutorNombre">Nombre del Tutor *</Label>
-                  <Input 
-                    id="tutorNombre" 
-                    name="tutorNombre" 
-                    value={formData.tutorNombre} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
-                  />
-                </div>
-                
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="direccion">Dirección *</Label>
-                  <Input 
-                    id="direccion" 
-                    name="direccion" 
-                    value={formData.direccion} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
-                  />
-                </div>
+                <Card className="shadow-lg">
+                    <CardHeader>
+                        <CardTitle>Información Familiar</CardTitle>
+                        <CardDescription>Modifica los datos del responsable y gestiona a todos los estudiantes del grupo.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <form onSubmit={handleSave} className="space-y-8">
+                            
+                            {/* SIN COLORES DE FONDO FUERTES */}
+                            <div className="p-6 rounded-lg border bg-card/50">
+                                <h3 className="text-sm font-bold uppercase text-muted-foreground mb-4 tracking-wider">Datos del Tutor (Responsable)</h3>
+                                <div className="grid gap-6 md:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label>Nombre del Tutor</Label>
+                                        <Input 
+                                            value={tutorData.nombre} 
+                                            onChange={(e) => setTutorData({...tutorData, nombre: e.target.value})}
+                                            placeholder="Nombre completo"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Teléfono (Contacto)</Label>
+                                        <Input 
+                                            value={tutorData.telefono} 
+                                            onChange={(e) => setTutorData({...tutorData, telefono: e.target.value})}
+                                            placeholder="Ej: 5555-5555"
+                                        />
+                                    </div>
+                                    <div className="space-y-2 md:col-span-2">
+                                        <Label>Dirección de Recogida</Label>
+                                        <Input 
+                                            value={tutorData.direccion} 
+                                            onChange={(e) => setTutorData({...tutorData, direccion: e.target.value})}
+                                            placeholder="Dirección exacta"
+                                        />
+                                        <p className="text-xs text-muted-foreground">Esta dirección se aplicará a todos los hijos.</p>
+                                    </div>
+                                </div>
+                            </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="grado">Grado *</Label>
-                  <Select 
-                    value={formData.grado} 
-                    onValueChange={(value) => handleSelectChange("grado", value)}
-                    disabled={loading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona el grado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1° Preescolar">1° Preescolar</SelectItem>
-                      <SelectItem value="2° Preescolar">2° Preescolar</SelectItem>
-                      <SelectItem value="3° Preescolar">3° Preescolar</SelectItem>
-                      <SelectItem value="1° Primaria">1° Primaria</SelectItem>
-                      <SelectItem value="2° Primaria">2° Primaria</SelectItem>
-                      <SelectItem value="3° Primaria">3° Primaria</SelectItem>
-                      <SelectItem value="4° Primaria">4° Primaria</SelectItem>
-                      <SelectItem value="5° Primaria">5° Primaria</SelectItem>
-                      <SelectItem value="6° Primaria">6° Primaria</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                            <Separator />
 
-                {/* CORREGIDO: Campo separado para teléfono del tutor */}
-                <div className="space-y-2">
-                  <Label htmlFor="tutorTelefono">Teléfono del Tutor *</Label>
-                  <Input 
-                    id="tutorTelefono" 
-                    name="tutorTelefono" 
-                    type="tel" 
-                    value={formData.tutorTelefono} 
-                    onChange={handleChange} 
-                    required 
-                    disabled={loading}
-                  />
-                </div>
-              </div>
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-end">
+                                    <h3 className="text-sm font-bold uppercase text-muted-foreground tracking-wider">Estudiantes ({hijos.length})</h3>
+                                    <div className="w-48">
+                                        <Label className="text-xs mb-1 block text-right font-medium">Mensualidad Familiar (C$)</Label>
+                                        {/* INPUT LIMPIO SIN COLORES VERDES */}
+                                        <Input 
+                                            type="number" 
+                                            value={precioFamiliarTotal}
+                                            onChange={(e) => redistribuirPrecio(Number(e.target.value))}
+                                            className="text-right font-bold text-lg"
+                                        />
+                                    </div>
+                                </div>
 
-              {/* --- SELECTOR DE VEHÍCULO (DINÁMICO) --- */}
-              <div className="space-y-2">
-                <Label>Asignar Vehículo *</Label>
-                <Select
-                  value={formData.vehiculoId} 
-                  onValueChange={(value) => handleSelectChange("vehiculoId", value)} 
-                  required
-                  disabled={loading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un vehículo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehiculos.map(v => (
-                      <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                                {hijos.map((hijo, index) => (
+                                    <div key={index} className="grid gap-4 md:grid-cols-12 items-end p-4 border rounded-lg shadow-sm relative bg-card">
+                                        <div className="md:col-span-4 space-y-2">
+                                            <Label>Nombre</Label>
+                                            <Input 
+                                                value={hijo.nombre} 
+                                                onChange={(e) => handleChangeHijo(index, "nombre", e.target.value)} 
+                                                placeholder="Nombre del alumno"
+                                            />
+                                        </div>
+                                        <div className="md:col-span-3 space-y-2">
+                                            <Label>Grado</Label>
+                                            <Select value={hijo.grado} onValueChange={(val) => handleChangeHijo(index, "grado", val)}>
+                                                <SelectTrigger><SelectValue placeholder="Grado" /></SelectTrigger>
+                                                <SelectContent>
+                                                    {["1° Preescolar", "2° Preescolar", "3° Preescolar", "1° Primaria", "2° Primaria", "3° Primaria", "4° Primaria", "5° Primaria", "6° Primaria"].map(g => (
+                                                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="md:col-span-3 space-y-2">
+                                            <Label>Vehículo</Label>
+                                            <Select value={hijo.vehiculoId || "N/A"} onValueChange={(val) => handleChangeHijo(index, "vehiculoId", val)}>
+                                                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                                                <SelectContent>
+                                                    {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="md:col-span-2 flex gap-2 items-end">
+                                            <div className="space-y-2 flex-1">
+                                                <Label className="text-xs text-muted-foreground">Cuota</Label>
+                                                <div className="h-10 flex items-center px-3 bg-muted rounded-md border text-sm text-muted-foreground">
+                                                    C$ {hijo.precio}
+                                                </div>
+                                            </div>
+                                            <Button 
+                                                type="button" 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="text-destructive hover:text-destructive hover:bg-destructive/10 mb-0.5"
+                                                onClick={() => eliminarHijo(index)}
+                                                title="Eliminar estudiante"
+                                            >
+                                                <Trash2 className="h-5 w-5" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
 
-              <div className="space-y-2">
-                <Label htmlFor="precio">Precio Mensual (Individual)</Label>
-                <Input 
-                  id="precio" 
-                  name="precio" 
-                  type="number" 
-                  step="0.01" 
-                  value={formData.precio} 
-                  onChange={handleChange} 
-                  disabled={loading}
-                />
-                 <p className="text-xs text-muted-foreground">
-                  Este es el precio individual del alumno (después de dividir entre hermanos si aplica).
-                </p>
-              </div>
+                                <Button type="button" variant="outline" onClick={agregarHermano} className="w-full border-dashed py-6 text-muted-foreground hover:text-primary hover:border-primary">
+                                    <Plus className="h-4 w-4 mr-2" /> Agregar otro hermano a este grupo
+                                </Button>
+                            </div>
 
-              <div className="flex gap-3 pt-4">
-                <Button type="submit" disabled={loading}>
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Guardando...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Guardar Cambios
-                    </>
-                  )}
-                </Button>
-                <Link href="/dashboard/propietario/alumnos">
-                  <Button type="button" variant="outline" disabled={loading}>
-                    Cancelar
-                  </Button>
-                </Link>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    </DashboardLayout>
-  );
+                            <div className="flex justify-end pt-6 border-t">
+                                {/* BOTÓN STANDARD */}
+                                <Button type="submit" disabled={saving} className="min-w-[200px]">
+                                    {saving ? <Loader2 className="mr-2 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                    Guardar Cambios
+                                </Button>
+                            </div>
+
+                        </form>
+                    </CardContent>
+                </Card>
+            </div>
+        </DashboardLayout>
+    )
 }

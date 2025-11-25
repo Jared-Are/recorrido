@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
-import React from "react"
+import { useState, useMemo, useEffect, Fragment } from "react"
 import { DashboardLayout, type MenuItem } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,19 +11,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
     Plus, 
     Search, 
-    Pencil,
-    Trash2,
+    Trash2, 
     Users, 
     DollarSign, 
     Bus, 
     UserCog, 
     Bell, 
     BarChart3, 
-    TrendingDown,
+    TrendingDown, 
     List, 
-    LayoutGrid,
+    LayoutGrid, 
     Loader2,
-    AlertTriangle
+    AlertTriangle,
+    ChevronDown,
+    ChevronUp,
+    // 👇 FIX: Agregar Check
+    Check
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -50,75 +52,19 @@ export type Alumno = {
     activo: boolean; 
 };
 
-// --- DEFINICIÓN DEL MENÚ COMPLETO ---
+// --- MENÚ ---
 const menuItems: MenuItem[] = [
-    {
-        title: "Gestionar Alumnos",
-        description: "Ver y administrar estudiantes",
-        icon: Users,
-        href: "/dashboard/propietario/alumnos",
-        color: "text-blue-600",
-        bgColor: "bg-blue-50 dark:bg-blue-900/20",
-    },
-    {
-        title: "Gestionar Pagos",
-        description: "Ver historial y registrar pagos",
-        icon: DollarSign,
-        href: "/dashboard/propietario/pagos",
-        color: "text-green-600",
-        bgColor: "bg-green-50 dark:bg-green-900/20",
-    },
-    {
-        title: "Gestionar Gastos",
-        description: "Control de combustible, salarios, etc.",
-        icon: TrendingDown,
-        href: "/dashboard/propietario/gastos",
-        color: "text-pink-600",
-        bgColor: "bg-pink-50 dark:bg-pink-900/20",
-    },
-    {
-        title: "Gestionar Personal",
-        description: "Administrar empleados y choferes",
-        icon: Users,
-        href: "/dashboard/propietario/personal",
-        color: "text-purple-600",
-        bgColor: "bg-purple-50 dark:bg-purple-900/20",
-    },
-    {
-        title: "Gestionar Vehículos",
-        description: "Administrar flota de vehículos",
-        icon: Bus,
-        href: "/dashboard/propietario/vehiculos",
-        color: "text-orange-600",
-        bgColor: "bg-orange-50 dark:bg-orange-900/20",
-    },
-    {
-        title: "Gestionar Usuarios",
-        description: "Administrar accesos al sistema",
-        icon: UserCog,
-        href: "/dashboard/propietario/usuarios",
-        color: "text-indigo-600",
-        bgColor: "bg-indigo-50 dark:bg-indigo-900/20",
-    },
-    {
-        title: "Enviar Avisos",
-        description: "Comunicados a tutores y personal",
-        icon: Bell,
-        href: "/dashboard/propietario/avisos",
-        color: "text-yellow-600",
-        bgColor: "bg-yellow-50 dark:bg-yellow-900/20",
-    },
-    {
-        title: "Generar Reportes",
-        description: "Estadísticas y análisis",
-        icon: BarChart3,
-        href: "/dashboard/propietario/reportes",
-        color: "text-red-600",
-        bgColor: "bg-red-50 dark:bg-red-900/20",
-    },
-];
+    { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
+    { title: "Gestionar Pagos", description: "Ver historial y registrar pagos", icon: DollarSign, href: "/dashboard/propietario/pagos", color: "text-green-600", bgColor: "bg-green-50 dark:bg-green-900/20" },
+    { title: "Gestionar Gastos", description: "Control de combustible, salarios, etc.", icon: TrendingDown, href: "/dashboard/propietario/gastos", color: "text-pink-600", bgColor: "bg-pink-50 dark:bg-pink-900/20" },
+    { title: "Gestionar Personal", description: "Administrar empleados y choferes", icon: Users, href: "/dashboard/propietario/personal", color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
+    { title: "Gestionar Vehículos", description: "Administrar flota de vehículos", icon: Bus, href: "/dashboard/propietario/vehiculos", color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
+    { title: "Gestionar Usuarios", description: "Administrar accesos al sistema", icon: UserCog, href: "/dashboard/propietario/usuarios", color: "text-indigo-600", bgColor: "bg-indigo-50 dark:bg-indigo-900/20" },
+    { title: "Enviar Avisos", description: "Comunicados a tutores y personal", icon: Bell, href: "/dashboard/propietario/avisos", color: "text-yellow-600", bgColor: "bg-yellow-50 dark:bg-yellow-900/20" },
+    { title: "Generar Reportes", description: "Estadísticas y análisis", icon: BarChart3, href: "/dashboard/propietario/reportes", color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
+]
 
-// --- CONSTANTES PARA LA VISTA DE CUADERNO ---
+// --- CONSTANTES ---
 const ANIO_ESCOLAR = new Date().getFullYear().toString(); 
 const MES_DICIEMBRE = `Diciembre ${ANIO_ESCOLAR}`; 
 const MESES_CUADERNO = [
@@ -126,7 +72,6 @@ const MESES_CUADERNO = [
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
 ].map(mes => `${mes} ${ANIO_ESCOLAR}`);
 
-// --- CONSTANTE PARA EL FILTRO DE TARJETAS ---
 const MESES_FILTRO = ["Todos", ...MESES_CUADERNO];
 
 const GRADO_ORDER = [
@@ -149,8 +94,11 @@ export default function PagosPage() {
     const [searchTerm, setSearchTerm] = useState("")
     const [cardMonthFilter, setCardMonthFilter] = useState("Todos");
     const [viewMode, setViewMode] = useState<'lista' | 'cuaderno'>('lista');
+    
+    const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+    const [isDeleting, setIsDeleting] = useState(false);
 
-    // --- OBTENER DATOS DE LA API ---
+    // --- CARGAR DATOS ---
     const fetchDatos = async () => {
         setLoading(true);
         setError(null);
@@ -159,110 +107,121 @@ export default function PagosPage() {
             const token = session?.access_token;
             if (!token) throw new Error("Sesión no válida o expirada.");
 
-            const headers = {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            };
+            const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
             
             const [pagosRes, alumnosRes] = await Promise.all([
                 fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos`, { headers }),
                 fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, { headers })
             ]);
 
-            // Manejo de Pagos: CRÍTICO (404/204 -> [])
             if (!pagosRes.ok) {
-                if (pagosRes.status === 404 || pagosRes.status === 204) {
-                    setPagos([]);
-                } else {
+                if (pagosRes.status !== 404 && pagosRes.status !== 204) {
                     const errorData = await pagosRes.json().catch(() => ({}));
                     throw new Error(errorData.message || `Error al cargar pagos (${pagosRes.status})`);
                 }
+                setPagos([]);
             } else {
-                 const pagosData: Pago[] = await pagosRes.json();
-                 setPagos(pagosData);
+                setPagos(await pagosRes.json());
             }
             
-            // Manejo de Alumnos: CRÍTICO (404/204 -> [])
             if (!alumnosRes.ok) {
-                 if (alumnosRes.status === 404 || alumnosRes.status === 204) {
-                    setAlumnos([]);
-                } else {
+                 if (alumnosRes.status !== 404 && alumnosRes.status !== 204) {
                     const errorData = await alumnosRes.json().catch(() => ({}));
                     throw new Error(errorData.message || `Error al cargar alumnos (${alumnosRes.status})`);
                 }
+                setAlumnos([]);
             } else {
                 const alumnosData: Alumno[] = await alumnosRes.json();
-                setAlumnos(alumnosData.filter(a => a.activo)); 
+                const alumnosNormalizados = alumnosData
+                    .filter(a => a.activo)
+                    .map(a => ({
+                        ...a,
+                        tutor: (a as any).tutorUser?.nombre || a.tutor || "Sin Tutor"
+                    }));
+                setAlumnos(alumnosNormalizados);
             }
             
         } catch (err: any) {
             setError(err.message);
-            toast({
-                title: "Error al cargar datos",
-                description: err.message,
-                variant: "destructive",
-            });
+            toast({ title: "Error al cargar datos", description: err.message, variant: "destructive" });
         } finally {
             setLoading(false);
         }
     };
     
-    useEffect(() => {
-        fetchDatos();
-    }, [toast]);
+    useEffect(() => { fetchDatos(); }, [toast]);
 
-    // --- LÓGICA DE FILTRADO (Para la 'Vista de Lista') ---
-    const filteredPagos = useMemo(() => {
+    // --- FILTRADO GLOBAL ---
+    const filteredPagosBase = useMemo(() => {
         let pagosFiltrados = [...pagos];
-
         if (cardMonthFilter !== "Todos") {
             pagosFiltrados = pagosFiltrados.filter(p => p.mes === cardMonthFilter);
         }
-
         if (searchTerm) {
-            pagosFiltrados = pagosFiltrados.filter(
-                (pago) =>
-                    pago.alumnoNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    pago.mes.toLowerCase().includes(searchTerm.toLowerCase()),
+            pagosFiltrados = pagosFiltrados.filter(p =>
+                p.alumnoNombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                p.mes.toLowerCase().includes(searchTerm.toLowerCase())
             );
         }
-        pagosFiltrados.sort((a, b) => {
-            const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
-            const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
-            return dateB - dateA;
-        });
         return pagosFiltrados;
     }, [pagos, searchTerm, cardMonthFilter]);
 
-    // --- LÓGICA DE DATOS (Para la 'Vista de Cuaderno') ---
+    // --- AGRUPACIÓN PARA VISTA DE LISTA (FAMILIAS) ---
+    const pagosAgrupadosPorFamilia = useMemo(() => {
+        const grupos = new Map<string, { tutor: string, total: number, pagos: Pago[], pendiente: number }>();
+
+        filteredPagosBase.forEach(pago => {
+            const alumno = alumnos.find(a => a.id === pago.alumnoId);
+            const tutorNombre = alumno?.tutor || "Tutor Desconocido";
+
+            if (searchTerm && !tutorNombre.toLowerCase().includes(searchTerm.toLowerCase()) && !pago.alumnoNombre.toLowerCase().includes(searchTerm.toLowerCase())) {
+                 return;
+            }
+
+            if (!grupos.has(tutorNombre)) {
+                grupos.set(tutorNombre, { tutor: tutorNombre, total: 0, pagos: [], pendiente: 0 });
+            }
+
+            const grupo = grupos.get(tutorNombre)!;
+            grupo.pagos.push(pago);
+            grupo.total += Number(pago.monto);
+        });
+
+        // --- CÁLCULO DE PENDIENTES ---
+        for (const grupo of grupos.values()) {
+             const alumnosFamilia = alumnos.filter(a => a.tutor === grupo.tutor);
+             let totalEsperado = 0;
+
+             if (cardMonthFilter === "Todos") {
+                 totalEsperado = alumnosFamilia.reduce((sum, a) => sum + (Number(a.precio) || 0) * 11, 0);
+             } else {
+                 totalEsperado = alumnosFamilia.reduce((sum, a) => sum + (Number(a.precio) || 0), 0);
+             }
+
+             const deuda = totalEsperado - grupo.total;
+             grupo.pendiente = deuda > 0 ? deuda : 0;
+        }
+
+        // Ordenar alfabéticamente por tutor
+        return Array.from(grupos.values()).sort((a, b) => a.tutor.localeCompare(b.tutor));
+    }, [filteredPagosBase, alumnos, searchTerm, cardMonthFilter]);
+
+
+    // --- LÓGICA DE CUADERNO ---
     const cuadernoData = useMemo(() => {
-        
-        const pagosMap = new Map<string, Map<string, { 
-            fechaSimple: string | null, 
-            abonos: { fecha: string, monto: number }[],
-            totalAbonado: number, 
-        }>>();
+        const pagosMap = new Map<string, Map<string, { fechaSimple: string | null, abonos: { fecha: string, monto: number }[], totalAbonado: number }>>();
 
         for (const pago of pagos) {
             if (pago.estado !== 'pagado' || !pago.fecha) continue;
-
-            if (!pagosMap.has(pago.alumnoId)) {
-                pagosMap.set(pago.alumnoId, new Map());
-            }
+            if (!pagosMap.has(pago.alumnoId)) pagosMap.set(pago.alumnoId, new Map());
             
             const fechaParts = pago.fecha.split('-'); 
             const fechaFormateada = `${fechaParts[2]}/${fechaParts[1]}`; 
 
             if (!pagosMap.get(pago.alumnoId)!.has(pago.mes)) {
-                pagosMap.get(pago.alumnoId)!.set(pago.mes, { 
-                    fechaSimple: null, 
-                    abonos: [], 
-                    totalAbonado: 0 
-                });
+                pagosMap.get(pago.alumnoId)!.set(pago.mes, { fechaSimple: null, abonos: [], totalAbonado: 0 });
             }
-
             const mesData = pagosMap.get(pago.alumnoId)!.get(pago.mes)!;
-            
             const montoNumerico = Number(pago.monto) || 0; 
 
             if (pago.mes === MES_DICIEMBRE) {
@@ -279,19 +238,12 @@ export default function PagosPage() {
                 ...alumno, 
                 meses: MESES_CUADERNO.map(mes => {
                     const mesData = pagosDelAlumno.get(mes) || { fechaSimple: null, abonos: [], totalAbonado: 0 };
-                    
                     const precio = Number(alumno.precio) || 0; 
-
                     let esDiciembrePagado = false;
                     if (mes === MES_DICIEMBRE) {
                         esDiciembrePagado = mesData.totalAbonado >= (precio - 0.01);
                     }
-
-                    return {
-                        mes: mes, 
-                        ...mesData,
-                        esDiciembrePagado,
-                    };
+                    return { mes, ...mesData, esDiciembrePagado };
                 })
             };
         });
@@ -300,9 +252,7 @@ export default function PagosPage() {
         
         const grouped = data.reduce((acc, alumno) => {
             const grado = alumno.grado || "Sin Grado"; 
-            if (!acc[grado]) {
-                acc[grado] = [];
-            }
+            if (!acc[grado]) acc[grado] = [];
             acc[grado].push(alumno);
             return acc;
         }, {} as Record<string, typeof data>); 
@@ -316,121 +266,96 @@ export default function PagosPage() {
         });
 
         return { grouped, sortedGroupKeys }; 
-
     }, [alumnos, pagos, searchTerm]); 
 
-    // --- CÁLCULOS (MODIFICADOS PARA FILTRO DE TARJETAS) ---
-    const pagosParaTarjetas = useMemo(() => {
-        if (cardMonthFilter === "Todos") {
-            return pagos;
-        }
-        return pagos.filter(p => p.mes === cardMonthFilter);
-    }, [pagos, cardMonthFilter]);
-
+    // --- CÁLCULOS DE TARJETAS ---
     const totalPagado = useMemo(() => 
-        pagosParaTarjetas
+        filteredPagosBase
             .filter((p) => p.estado === "pagado")
             .reduce((sum, p) => sum + (Number(p.monto) || 0), 0),
-    [pagosParaTarjetas]);
+    [filteredPagosBase]);
     
-    // --- LÓGICA DE "PENDIENTE" CORREGIDA ---
     const totalPendiente = useMemo(() => {
-        // 1. Total teórico de TODOS los alumnos (precio * 11 meses)
-        const totalTeoricoAnual = alumnos.reduce((sum, alumno) => {
-            return sum + (Number(alumno.precio) || 0) * 11; 
-        }, 0);
-
-        // 2. Total pagado de TODO el año (SOLO DE ESTE AÑO)
+        const totalTeoricoAnual = alumnos.reduce((sum, alumno) => sum + (Number(alumno.precio) || 0) * 11, 0);
         const totalPagadoAnual = pagos
             .filter(p => p.estado === 'pagado' && p.mes.includes(ANIO_ESCOLAR)) 
             .reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
 
-        // Lógica por Mes
         if (cardMonthFilter !== "Todos") {
             const totalTeoricoDelMes = alumnos.reduce((sum, alumno) => sum + (Number(alumno.precio) || 0), 0);
-            
             const totalPagadoEseMes = pagos
                 .filter(p => p.mes === cardMonthFilter && p.estado === 'pagado')
                 .reduce((sum, p) => sum + (Number(p.monto) || 0), 0);
-            
             const saldo = totalTeoricoDelMes - totalPagadoEseMes;
             return saldo < 0 ? 0 : saldo;
         }
-
-        // Lógica General ("Todos"): Deuda total del año
         const saldoAnual = totalTeoricoAnual - totalPagadoAnual;
         return saldoAnual < 0 ? 0 : saldoAnual;
-
     }, [pagos, alumnos, cardMonthFilter, ANIO_ESCOLAR]);
     
-    const totalRegistros = useMemo(() =>
-        pagosParaTarjetas.length,
-    [pagosParaTarjetas]);
+    const totalRegistros = useMemo(() => filteredPagosBase.length, [filteredPagosBase]);
 
-    // --- BORRAR PAGO CON API ---
-    const handleDelete = async (id: string) => {
-        if (!window.confirm("¿Estás seguro de ELIMINAR este registro de pago? Esta acción es permanente.")) {
+    // --- ELIMINAR PAGO DE FAMILIA (LOTE) ---
+    const handleDeleteGroup = async (pagosIds: string[], mes: string, tutor: string) => {
+        if (!window.confirm(`¿Estás seguro de ELIMINAR el pago de ${mes} para la familia ${tutor}? Esta acción borrará los registros de todos los hijos.`)) {
             return;
         }
+        
+        setIsDeleting(true);
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
             if (!token) throw new Error("Sesión no válida.");
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            if (!response.ok) {
-                throw new Error("No se pudo eliminar el pago.");
-            }
-            setPagos(prev => prev.filter((p) => p.id !== id));
-            toast({
-                title: "Pago Eliminado",
-                description: "El registro del pago ha sido eliminado.",
-            });
+            // Borramos uno por uno
+            const deletePromises = pagosIds.map(id => 
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/pagos/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                })
+            );
+
+            await Promise.all(deletePromises);
+            
+            // Actualizamos estado local quitando todos los IDs borrados
+            setPagos(prev => prev.filter((p) => !pagosIds.includes(p.id)));
+            toast({ title: "Pago Familiar Eliminado", description: `Se eliminaron los registros de ${mes}.` });
+
         } catch (err: any) {
-            toast({
-                title: "Error al eliminar",
-                description: err.message,
-                variant: "destructive",
-            });
+            toast({ title: "Error al eliminar", description: err.message, variant: "destructive" });
+        } finally {
+            setIsDeleting(false);
         }
     };
 
-    // --- MANEJO DE ESTADOS DE CARGA/ERROR ---
-    if (loading) {
-        return (
-            <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
-                <div className="flex justify-center items-center h-64">
-                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                    <p className="ml-3 text-muted-foreground">Cargando pagos...</p>
-                </div>
-            </DashboardLayout>
-        );
-    }
+    const toggleGroup = (tutorName: string) => {
+        const newSet = new Set(expandedFamilies);
+        if (newSet.has(tutorName)) newSet.delete(tutorName);
+        else newSet.add(tutorName);
+        setExpandedFamilies(newSet);
+    };
 
-    if (error && pagos.length === 0 && alumnos.length === 0) {
-        return (
-            <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
-                <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
-                    <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                    <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
-                    <p className="text-muted-foreground max-w-md">{error}</p>
-                    <Button className="mt-4" onClick={fetchDatos}>
-                        Intentar de nuevo
-                    </Button>
-                </div>
-            </DashboardLayout>
-        );
-    }
+    if (loading) return (
+        <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
+            <div className="flex justify-center items-center h-64"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+        </DashboardLayout>
+    );
 
-    // --- RENDERIZADO PRINCIPAL ---
+    if (error && pagos.length === 0 && alumnos.length === 0) return (
+        <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
+            <div className="flex flex-col justify-center items-center h-64 text-center p-6 bg-red-50 rounded-lg border border-red-100">
+                <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+                <h3 className="text-xl font-bold text-red-700 mb-2">Error al cargar datos</h3>
+                <p className="text-muted-foreground max-w-md">{error}</p>
+                <Button className="mt-4" onClick={fetchDatos}>Intentar de nuevo</Button>
+            </div>
+        </DashboardLayout>
+    );
+
     return (
         <DashboardLayout title="Gestión de Pagos" menuItems={menuItems}>
             <div className="space-y-6">
                 
-                {/* --- NUEVO FILTRO DE MES PARA TARJETAS --- */}
                 <div className="flex justify-end">
                     <Select onValueChange={setCardMonthFilter} value={cardMonthFilter}>
                         <SelectTrigger className="w-full md:w-[240px]">
@@ -446,7 +371,6 @@ export default function PagosPage() {
                     </Select>
                 </div>
 
-                {/* --- TARJETAS DE RESUMEN (grid-cols-3) --- */}
                 <div className="grid grid-cols-3 gap-4">
                     <Card>
                         <CardHeader className="pb-2"><CardDescription className="text-xs">Total Pagado</CardDescription></CardHeader>
@@ -454,9 +378,7 @@ export default function PagosPage() {
                     </Card>
                     <Card>
                         <CardHeader className="pb-2">
-                            <CardDescription className="text-xs">
-                                {cardMonthFilter === "Todos" ? "Total Pendiente (Anual)" : `Pendiente (${cardMonthFilter.split(" ")[0]})`}
-                            </CardDescription> 
+                            <CardDescription className="text-xs">{cardMonthFilter === "Todos" ? "Total Pendiente (Anual)" : `Pendiente (${cardMonthFilter.split(" ")[0]})`}</CardDescription> 
                         </CardHeader>
                         <CardContent><div className="text-xl md:text-2xl font-bold text-orange-600">C${totalPendiente.toLocaleString()}</div></CardContent>
                     </Card>
@@ -466,13 +388,12 @@ export default function PagosPage() {
                     </Card>
                 </div>
 
-                {/* --- CONTROLES DE BÚSQUEDA Y ACCIÓN --- */}
                 <div className="flex flex-col-reverse sm:flex-row justify-between items-center gap-4">
                     <div className="flex-1 flex flex-col sm:flex-row gap-4 w-full">
                         <div className="relative w-full sm:max-w-sm">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
-                                placeholder="Buscar por alumno..."
+                                placeholder="Buscar familia o alumno..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="pl-9 w-full"
@@ -485,108 +406,141 @@ export default function PagosPage() {
                             variant="outline" 
                             onClick={() => setViewMode(viewMode === 'lista' ? 'cuaderno' : 'lista')}
                             className="w-full sm:w-auto"
-                            title={viewMode === 'lista' ? "Cambiar a Vista de Resumen Anual" : "Cambiar a Vista de Historial"}
                         >
-                            {viewMode === 'lista' ? 
-                                <LayoutGrid className="h-4 w-4 mr-2" /> : 
-                                <List className="h-4 w-4 mr-2" />
-                            }
+                            {viewMode === 'lista' ? <LayoutGrid className="h-4 w-4 mr-2" /> : <List className="h-4 w-4 mr-2" />}
                             {viewMode === 'lista' ? 'Ver Resumen' : 'Ver Historial'}
                         </Button>
                         
                         <Link href="/dashboard/propietario/pagos/nuevo" className="w-full sm:w-auto">
                             <Button className="w-full">
-                                <Plus className="h-4 w-4 mr-2" />
-                                Registrar Pago
+                                <Plus className="h-4 w-4 mr-2" /> Registrar Pago
                             </Button>
                         </Link>
                     </div>
                 </div>
 
-                {/* --- MENSAJE DE TABLA VACÍA --- */}
-                {pagos.length === 0 && alumnos.length > 0 && !loading && viewMode === 'lista' && (
-                    <Card className="mt-6 border-l-4 border-l-green-500">
-                        <CardHeader>
-                            <CardTitle>No hay transacciones registradas</CardTitle>
-                            <CardDescription>
-                                Comienza registrando un pago para el mes actual.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Link href="/dashboard/propietario/pagos/nuevo">
-                                <Button>
-                                    <Plus className="h-4 w-4 mr-2" /> Registrar Primer Pago
-                                </Button>
-                            </Link>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* --- RENDERIZADO CONDICIONAL DE LA TABLA --- */}
                 <Card>
                     {viewMode === 'lista' ? (
                         <>
-                            {/* --- VISTA DE LISTA --- */}
                             <CardHeader>
                                 <CardTitle>Historial de Transacciones</CardTitle>
-                                <CardDescription>
-                                    Cada pago individual. La lista se filtra por el mes seleccionado arriba.
-                                </CardDescription>
+                                <CardDescription>Pagos agrupados por Familia y Mes.</CardDescription>
                             </CardHeader>
-                            <CardContent>
-                                <div className="overflow-x-auto">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Alumno</TableHead>
-                                                <TableHead>Mes</TableHead>
-                                                <TableHead>Monto</TableHead>
-                                                <TableHead>Fecha de Pago</TableHead>
-                                                <TableHead className="text-right">Acciones</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {filteredPagos.length === 0 ? (
-                                                <TableRow>
-                                                    <TableCell colSpan={5} className="text-center text-muted-foreground">
-                                                        No se encontraron pagos con esos filtros.
-                                                    </TableCell>
-                                                </TableRow>
-                                            ) : (
-                                                filteredPagos.map((pago) => (
-                                                    <TableRow key={pago.id}>
-                                                        <TableCell className="font-medium whitespace-nowrap">{pago.alumnoNombre}</TableCell>
-                                                        <TableCell className="whitespace-nowrap">{pago.mes}</TableCell>
-                                                        <TableCell className="whitespace-nowrap">C${formatCurrency(Number(pago.monto))}</TableCell>
-                                                        <TableCell className="whitespace-nowrap">{pago.fecha ? new Date(pago.fecha + 'T00:00:00').toLocaleDateString('es-NI') : "-"}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <div className="flex justify-end gap-2">
-                                                                <Link href={`/dashboard/propietario/pagos/${pago.id}`}>
-                                                                    <Button variant="ghost" size="icon" title="Editar">
-                                                                        <Pencil className="h-4 w-4" />
-                                                                    </Button>
-                                                                </Link>
-                                                                <Button variant="ghost" size="icon" title="Eliminar" onClick={() => handleDelete(pago.id)}>
-                                                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                                                </Button>
-                                                            </div>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))
-                                            )}
-                                        </TableBody>
-                                    </Table>
+                            <CardContent className="space-y-2">
+                                <div className="hidden md:flex justify-between items-center p-3 font-semibold text-sm text-muted-foreground bg-muted/50 rounded-t-lg">
+                                    <div className="w-[30%] pl-2">Familia / Tutor</div>
+                                    <div className="w-[20%] text-center">Total Pagado</div>
+                                    <div className="w-[20%] text-center">Total Pendiente</div>
+                                    <div className="w-[30%] text-right pr-4">Acciones</div>
                                 </div>
+
+                                {pagosAgrupadosPorFamilia.length === 0 ? (
+                                    <div className="text-center py-8 text-muted-foreground">No hay pagos registrados.</div>
+                                ) : (
+                                    pagosAgrupadosPorFamilia.map(grupo => {
+                                        const isExpanded = expandedFamilies.has(grupo.tutor);
+                                        
+                                        // Agrupar internamente por MES
+                                        const pagosPorMes = new Map<string, { ids: string[], monto: number, fecha: string, alumnos: string[] }>();
+                                        
+                                        grupo.pagos.forEach(p => {
+                                            if (!pagosPorMes.has(p.mes)) {
+                                                pagosPorMes.set(p.mes, { ids: [], monto: 0, fecha: p.fecha, alumnos: [] });
+                                            }
+                                            const data = pagosPorMes.get(p.mes)!;
+                                            data.ids.push(p.id);
+                                            data.monto += Number(p.monto);
+                                            data.alumnos.push(p.alumnoNombre);
+                                        });
+
+                                        return (
+                                            <div key={grupo.tutor} className="border rounded-lg overflow-hidden transition-colors hover:bg-muted/20">
+                                                <div 
+                                                    className="flex flex-col md:flex-row justify-between items-center p-4 cursor-pointer gap-4"
+                                                    onClick={() => toggleGroup(grupo.tutor)}
+                                                >
+                                                    {/* Col 1: Tutor */}
+                                                    <div className="w-full md:w-[30%] flex items-center gap-2">
+                                                        {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground"/> : <ChevronDown className="h-4 w-4 text-muted-foreground"/>}
+                                                        <span className="font-medium text-lg">{grupo.tutor}</span>
+                                                    </div>
+
+                                                    {/* Col 2: Total Pagado */}
+                                                    <div className="w-full md:w-[20%] text-left md:text-center">
+                                                        <span className="font-bold text-green-600">C$ {formatCurrency(grupo.total)}</span>
+                                                    </div>
+
+                                                    {/* Col 3: Total Pendiente (NUEVA) */}
+                                                    <div className="w-full md:w-[20%] text-left md:text-center">
+                                                        {grupo.pendiente > 0 ? (
+                                                            <Badge variant="destructive" className="bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200">
+                                                                C$ {formatCurrency(grupo.pendiente)}
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+                                                                <Check className="h-3 w-3 mr-1" /> Al día
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Col 4: Acciones */}
+                                                    <div className="w-full md:w-[30%] text-left md:text-right">
+                                                        <Badge variant="outline">{grupo.pagos.length} pagos</Badge>
+                                                    </div>
+                                                </div>
+
+                                                {isExpanded && (
+                                                    <div className="bg-muted/30 border-t p-4">
+                                                        <div className="overflow-x-auto">
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow>
+                                                                        <TableHead>Mes / Concepto</TableHead>
+                                                                        <TableHead>Monto Familiar</TableHead>
+                                                                        <TableHead>Detalle Alumnos</TableHead>
+                                                                        <TableHead>Fecha</TableHead>
+                                                                        <TableHead className="text-right">Acciones</TableHead>
+                                                                    </TableRow>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {Array.from(pagosPorMes.entries()).map(([mes, data]) => (
+                                                                        <TableRow key={mes} className="bg-background">
+                                                                            <TableCell className="font-medium">{mes}</TableCell>
+                                                                            <TableCell className="font-bold text-green-600">C$ {formatCurrency(data.monto)}</TableCell>
+                                                                            <TableCell className="text-xs text-muted-foreground max-w-[250px] truncate" title={data.alumnos.join(', ')}>
+                                                                                {data.alumnos.length} alumnos ({data.alumnos.slice(0, 2).join(', ')}{data.alumnos.length > 2 ? '...' : ''})
+                                                                            </TableCell>
+                                                                            <TableCell>{data.fecha ? new Date(data.fecha + 'T00:00:00').toLocaleDateString('es-NI') : "-"}</TableCell>
+                                                                            <TableCell className="text-right">
+                                                                                <Button 
+                                                                                    variant="ghost" 
+                                                                                    size="icon" 
+                                                                                    disabled={isDeleting}
+                                                                                    onClick={() => handleDeleteGroup(data.ids, mes, grupo.tutor)}
+                                                                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                                                    title="Eliminar pago familiar"
+                                                                                >
+                                                                                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Trash2 className="h-4 w-4" />}
+                                                                                </Button>
+                                                                            </TableCell>
+                                                                        </TableRow>
+                                                                    ))}
+                                                                </TableBody>
+                                                            </Table>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })
+                                )}
                             </CardContent>
                         </>
                     ) : (
                         <>
-                            {/* --- VISTA DE CUADERNO (Resumen Anual) --- */}
                             <CardHeader>
                                 <CardTitle>Resumen Anual (Vista Cuaderno)</CardTitle>
-                                <CardDescription>
-                                    Fechas de pago registradas por alumno para el año {ANIO_ESCOLAR}.
-                                </CardDescription>
+                                <CardDescription>Fechas de pago registradas por alumno para el año {ANIO_ESCOLAR}.</CardDescription>
                             </CardHeader>
                             <CardContent>
                                 {alumnos.length === 0 ? (
@@ -596,79 +550,48 @@ export default function PagosPage() {
                                         <Table className="min-w-[1200px] md:min-w-[1400px]"> 
                                             <TableHeader>
                                                 <TableRow>
-                                                    <TableHead className="w-[160px] min-w-[160px] md:w-[200px] md:min-w-[200px]">
-                                                        Alumno
-                                                    </TableHead>
-                                                    <TableHead className="w-[100px] min-w-[100px] md:w-[120px] md:min-w-[120px]">
-                                                        Mensualidad
-                                                    </TableHead>
+                                                    <TableHead className="w-[160px] min-w-[160px] md:w-[200px] md:min-w-[200px]">Alumno</TableHead>
+                                                    <TableHead className="w-[100px] min-w-[100px] md:w-[120px] md:min-w-[120px]">Mensualidad</TableHead>
                                                     {MESES_CUADERNO.map(mes => (
-                                                        <TableHead key={mes} className="text-center w-[100px]">
-                                                            {mes.split(" ")[0]} 
-                                                        </TableHead>
+                                                        <TableHead key={mes} className="text-center w-[100px]">{mes.split(" ")[0]}</TableHead>
                                                     ))}
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>{
                                                 cuadernoData.sortedGroupKeys.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={13} className="text-center text-muted-foreground">
-                                                            No se encontraron alumnos con ese término de búsqueda.
-                                                        </TableCell>
+                                                        <TableCell colSpan={13} className="text-center text-muted-foreground">No se encontraron alumnos.</TableCell>
                                                     </TableRow>
                                                 ) : (
                                                     cuadernoData.sortedGroupKeys.map(grado => (
-                                                        <React.Fragment key={grado}>
+                                                        <Fragment key={grado}>
                                                             <TableRow className="bg-muted/50 hover:bg-muted/50">
-                                                                <TableCell colSpan={13} className="bg-muted/50 font-semibold text-sm">
-                                                                    {grado}
-                                                                </TableCell>
+                                                                <TableCell colSpan={13} className="bg-muted/50 font-semibold text-sm">{grado}</TableCell>
                                                             </TableRow>
                                                             {cuadernoData.grouped[grado].map((alumno) => (
                                                                 <TableRow key={alumno.id}>
-                                                                    <TableCell className="font-medium w-[160px] min-w-[160px] md:w-[200px] md:min-w-[200px]">
-                                                                        {alumno.nombre}
-                                                                    </TableCell>
-                                                                    <TableCell className="font-medium w-[100px] min-w-[100px] md:w-[120px] md:min-w-[120px]">
-                                                                        C$ {formatCurrency(Number(alumno.precio) || 0)}
-                                                                    </TableCell>
-                                                                    {alumno.meses.map((mesData: { 
-                                                                        mes: string, 
-                                                                        fechaSimple: string | null, 
-                                                                        abonos: { fecha: string, monto: number }[],
-                                                                        esDiciembrePagado: boolean,
-                                                                    }) => (
+                                                                    <TableCell className="font-medium w-[160px] min-w-[160px] md:w-[200px] md:min-w-[200px]">{alumno.nombre}</TableCell>
+                                                                    <TableCell className="font-medium w-[100px] min-w-[100px] md:w-[120px] md:min-w-[120px]">C$ {formatCurrency(Number(alumno.precio) || 0)}</TableCell>
+                                                                    {alumno.meses.map((mesData) => (
                                                                         <TableCell key={mesData.mes} className="text-center align-top">
                                                                             {mesData.mes === MES_DICIEMBRE ? (
-                                                                                // --- LÓGICA DE DICIEMBRE ---
                                                                                 mesData.abonos.length > 0 ? (
                                                                                     <div className="flex flex-col gap-1 items-center">
-                                                                                        {mesData.abonos.map((abono: { fecha: string, monto: number }, idx: number) => (
-                                                                                            <Badge 
-                                                                                                key={idx} 
-                                                                                                variant={mesData.esDiciembrePagado ? "default" : "secondary"} 
-                                                                                                className="text-xs whitespace-nowrap"
-                                                                                            >
+                                                                                        {mesData.abonos.map((abono: { fecha: string; monto: number }, idx: number) => (
+                                                                                            <Badge key={idx} variant={mesData.esDiciembrePagado ? "default" : "secondary"} className="text-xs whitespace-nowrap">
                                                                                                 {abono.fecha} - C${formatCurrency(abono.monto)}
                                                                                             </Badge>
                                                                                         ))}
                                                                                     </div>
-                                                                                ) : (
-                                                                                    <span className="text-muted-foreground">-</span>
-                                                                                )
+                                                                                ) : <span className="text-muted-foreground">-</span>
                                                                             ) : (
-                                                                                // Lógica Meses Regulares (Feb-Nov)
-                                                                                mesData.fechaSimple ? (
-                                                                                    <Badge variant="default">{mesData.fechaSimple}</Badge>
-                                                                                ) : (
-                                                                                    <span className="text-muted-foreground">-</span>
-                                                                                )
+                                                                                mesData.fechaSimple ? <Badge variant="default">{mesData.fechaSimple}</Badge> : <span className="text-muted-foreground">-</span>
                                                                             )}
                                                                         </TableCell>
                                                                     ))}
                                                                 </TableRow>
                                                             ))}
-                                                        </React.Fragment>
+                                                        </Fragment>
                                                     ))
                                                 )}
                                             </TableBody>
