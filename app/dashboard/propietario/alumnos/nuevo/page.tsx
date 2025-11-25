@@ -18,17 +18,15 @@ import { z } from "zod";
 // --- 1. DEFINICIÓN DE REGLAS DE NEGOCIO (ZOD) ---
 const nombreRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
 const direccionRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]+$/;
-
-// NUEVA REGLA: 8 dígitos, y el primero debe ser 5, 7 u 8.
 const telefonoNicaRegex = /^[578][0-9]{7}$/; 
 
 const alumnoSchema = z.object({
     nombre: z.string()
-        .min(3, "El nombre del alumno es muy corto (mínimo 3 letras).")
-        .max(60, "El nombre no puede tener más de 60 caracteres.")
-        .regex(nombreRegex, "El nombre solo debe contener letras y espacios.")
-        .refine((val) => !/(.)\1\1/.test(val), "No puedes repetir la misma letra más de 2 veces seguidas.")
-        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "El nombre debe comenzar con mayúscula."),
+        .min(3, "El nombre es muy corto (mín 3 letras).")
+        .max(60, "El nombre es muy largo.")
+        .regex(nombreRegex, "Solo letras y espacios.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repetir letras más de 2 veces.")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "Debe ingresar el nombre correctamente."),
     grado: z.string().min(1, "Debes seleccionar un grado."),
     vehiculoId: z.string().min(1, "Debes asignar un vehículo."),
 });
@@ -36,30 +34,54 @@ const alumnoSchema = z.object({
 const formularioSchema = z.object({
     ...alumnoSchema.shape,
     tutorNombre: z.string()
-        .min(5, "El nombre del tutor debe ser completo (mínimo 5 letras).")
-        .max(60, "El nombre del tutor no puede exceder 60 caracteres.")
-        .regex(nombreRegex, "El nombre del tutor solo debe contener letras y espacios.")
-        .refine((val) => !/(.)\1\1/.test(val), "No puedes repetir la misma letra más de 2 veces seguidas.")
-        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "El nombre debe comenzar con mayúscula."),
+        .min(5, "Nombre muy corto.")
+        .max(60, "Nombre muy largo.")
+        .regex(nombreRegex, "Solo letras y espacios.")
+        .refine((val) => !/(.)\1\1/.test(val), "No repetir letras excesivamente.")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "Debe ingresar el nombre correctamente."),
     tutorTelefono: z.string()
-        .regex(telefonoNicaRegex, "El teléfono debe ser un celular válido (empieza con 5, 7 u 8) y tener 8 dígitos."),
+        .regex(telefonoNicaRegex, "Teléfono inválido (8 dígitos, inicia 5, 7 u 8)."),
     direccion: z.string()
-        .min(10, "La dirección debe ser detallada (mínimo 10 caracteres).")
-        .regex(direccionRegex, "La dirección solo puede contener letras y números."),
+        .min(10, "Dirección muy corta (mín 10 carac).")
+        .regex(direccionRegex, "Solo letras y números."),
     precio: z.coerce.number()
-        .gt(700, "El precio mensual debe ser MAYOR a 700 C$.") 
-        .max(50000, "El precio excede el límite permitido."),
+        .gte(700, "El valor debe ser mayor o igual que 700.") 
+        .max(50000, "Precio excede el límite."),
 });
 
 const hermanoSchema = z.object({
     nombre: z.string()
-        .min(3, "Nombre de hermano muy corto.")
+        .min(3, "Nombre muy corto.")
         .regex(nombreRegex, "Solo letras.")
-        .refine((val) => !/(.)\1\1/.test(val), "No repitas letras excesivamente.")
-        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "Debe comenzar con mayúscula."),
+        .refine((val) => !/(.)\1\1/.test(val), "No repetir letras.")
+        .refine((val) => /^[A-ZÁÉÍÓÚÑ]/.test(val), "Debe iniciar con mayúscula."),
     grado: z.string().min(1, "Selecciona el grado."),
     vehiculoId: z.string().min(1, "Selecciona el vehículo."),
 });
+
+// Tipos para manejo de errores
+type FieldErrors = {
+    [key: string]: string | undefined;
+};
+
+// --- COMPONENTE TOOLTIP DE ERROR ---
+const ErrorTooltip = ({ message }: { message?: string }) => {
+    if (!message) return null;
+    return (
+        // z-20 para que no tape el menú lateral (que suele ser z-40/50)
+        <div className="absolute top-full left-0 mt-1 z-20 animate-in fade-in zoom-in-95 duration-200 w-full">
+            {/* Triangulito */}
+            <div className="absolute -top-[5px] left-4 w-3 h-3 bg-white border-t border-l border-gray-200 transform rotate-45 shadow-sm z-10" />
+            {/* Caja del mensaje */}
+            <div className="relative bg-white border border-gray-200 text-gray-800 text-xs px-3 py-2 rounded-md shadow-lg flex items-center gap-2">
+                <div className="bg-orange-500 text-white rounded-sm p-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                    <span className="font-bold text-[10px]">!</span>
+                </div>
+                <span className="font-medium">{message}</span>
+            </div>
+        </div>
+    );
+};
 
 // --- MENÚ ---
 const menuItems: MenuItem[] = [
@@ -81,9 +103,13 @@ export default function NuevoAlumnoPage() {
     const [loading, setLoading] = useState(false);
     const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
     
+    // Estados de error
+    const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+    const [brotherErrors, setBrotherErrors] = useState<FieldErrors[]>([]);
+
     const [formData, setFormData] = useState({
         nombre: "", tutorNombre: "", tutorTelefono: "", grado: "", direccion: "", vehiculoId: "", 
-        precio: "700", // <-- Valor por defecto 700
+        precio: "700", 
         hermanos: false,
     });
     const [otrosHijos, setOtrosHijos] = useState<{ nombre: string; grado: string; vehiculoId: string }[]>([]);
@@ -109,33 +135,88 @@ export default function NuevoAlumnoPage() {
         p[0] += resto; return p;
     };
 
-    // Helper para capitalizar palabras (Title Case)
+    // Helper Title Case
     const toTitleCase = (str: string) => {
         return str.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
+    };
+
+    // Helper para limpiar errores al escribir
+    const clearError = (field: string) => {
+        setFieldErrors(prev => ({ ...prev, [field]: undefined }));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        try {
-            const valid = formularioSchema.parse(formData); // Validación final estricta
+        setFieldErrors({});
+        setBrotherErrors([]);
 
-            if (formData.hermanos) {
-                if (otrosHijos.length === 0) throw new Error("Marcaste hermanos pero la lista está vacía.");
-                otrosHijos.forEach((h, i) => { try { hermanoSchema.parse(h); } catch (e:any) { throw new Error(`Hermano ${i+1}: ${e.errors[0].message}`); } });
+        try {
+            // 1. VALIDACIÓN FORMULARIO PRINCIPAL
+            const result = formularioSchema.safeParse(formData);
+            
+            let isValid = true;
+            let mainData = null;
+
+            if (!result.success) {
+                const newErrors: FieldErrors = {};
+                result.error.errors.forEach(err => {
+                    if (err.path[0]) newErrors[err.path[0].toString()] = err.message;
+                });
+                setFieldErrors(newErrors);
+                isValid = false;
+            } else {
+                mainData = result.data;
             }
 
-            const lista = [{ nombre: valid.nombre, grado: valid.grado, vehiculoId: valid.vehiculoId }, ...otrosHijos];
-            const precios = calcularPrecios(valid.precio, lista.length);
-            const { data: { session } } = await supabase.auth.getSession();
+            // 2. VALIDACIÓN HERMANOS
+            if (formData.hermanos) {
+                if (otrosHijos.length === 0) {
+                    toast({ title: "Error", description: "Marcaste hermanos pero la lista está vacía.", variant: "destructive" });
+                    setLoading(false);
+                    return;
+                }
+
+                const newBrotherErrors: FieldErrors[] = [];
+                let brothersValid = true;
+
+                otrosHijos.forEach((h) => {
+                    const res = hermanoSchema.safeParse(h);
+                    if (!res.success) {
+                        const errors: FieldErrors = {};
+                        res.error.errors.forEach(err => {
+                            if (err.path[0]) errors[err.path[0].toString()] = err.message;
+                        });
+                        newBrotherErrors.push(errors);
+                        brothersValid = false;
+                    } else {
+                        newBrotherErrors.push({});
+                    }
+                });
+
+                if (!brothersValid) {
+                    setBrotherErrors(newBrotherErrors);
+                    isValid = false;
+                }
+            }
+
+            if (!isValid) {
+                setLoading(false);
+                return; // Detenemos el envío sin toast global, ya se muestran los tooltips
+            }
+
+            // Si todo es válido, procedemos
+            const lista = [{ nombre: mainData!.nombre, grado: mainData!.grado, vehiculoId: mainData!.vehiculoId }, ...otrosHijos];
+            const precios = calcularPrecios(mainData!.precio, lista.length);
             
+            const { data: { session } } = await supabase.auth.getSession();
             const headers = { 'Authorization': `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' };
 
             for (const [i, al] of lista.entries()) {
                 const payload = {
                     nombre: al.nombre.trim(), grado: al.grado, 
-                    tutor: { nombre: valid.tutorNombre.trim(), telefono: valid.tutorTelefono.trim() },
-                    direccion: valid.direccion.trim(), vehiculoId: al.vehiculoId, precio: precios[i], activo: true
+                    tutor: { nombre: mainData!.tutorNombre.trim(), telefono: mainData!.tutorTelefono.trim() },
+                    direccion: mainData!.direccion.trim(), vehiculoId: al.vehiculoId, precio: precios[i], activo: true
                 };
                 const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/alumnos`, { method: 'POST', headers, body: JSON.stringify(payload) });
                 if (!res.ok) throw new Error(`Falló registro de ${al.nombre}`);
@@ -145,7 +226,7 @@ export default function NuevoAlumnoPage() {
             router.push("/dashboard/propietario/alumnos");
 
         } catch (err: any) {
-            toast({ title: "Error", description: err instanceof z.ZodError ? err.errors[0].message : err.message, variant: "destructive" });
+            toast({ title: "Error del Sistema", description: err.message, variant: "destructive" });
         } finally { setLoading(false); }
     };
 
@@ -156,119 +237,220 @@ export default function NuevoAlumnoPage() {
                 <Card>
                     <CardHeader><CardTitle>Ingreso de Nuevo Alumno</CardTitle><CardDescription>Registra estudiante y familia.</CardDescription></CardHeader>
                     <CardContent>
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                        <form onSubmit={handleSubmit} className="space-y-4 pb-8"> 
+                            
                             <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-2">
-                                    <Label>Nombre Alumno *</Label>
+                                
+                                {/* Nombre Alumno */}
+                                <div className="space-y-2 relative group">
+                                    <Label className={fieldErrors.nombre ? "text-red-500" : ""}>Nombre Alumno *</Label>
                                     <Input 
                                         value={formData.nombre} 
                                         placeholder="Ej: Juan Pablo"
-                                        onChange={(e) => { 
-                                            const val = e.target.value;
-                                            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
-                                            if (/(.)\1\1/.test(val)) return; // Anti-spam repetición
-                                            
-                                            // Auto Capitalize
-                                            setFormData({...formData, nombre: toTitleCase(val)}); 
-                                        }} 
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Grado *</Label>
-                                    <Select value={formData.grado} onValueChange={(v)=>setFormData({...formData, grado: v})}>
-                                        <SelectTrigger><SelectValue placeholder="Grado"/></SelectTrigger>
-                                        <SelectContent>{["1° Preescolar","2° Preescolar","3° Preescolar","1° Primaria","2° Primaria","3° Primaria","4° Primaria","5° Primaria","6° Primaria"].map(g=><SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Nombre Tutor *</Label>
-                                    <Input 
-                                        value={formData.tutorNombre} 
-                                        placeholder="Ej: Ricardo Leandro Martin Perez"
+                                        className={fieldErrors.nombre ? "border-red-500 focus-visible:ring-red-500" : ""}
                                         onChange={(e) => { 
                                             const val = e.target.value;
                                             if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
                                             if (/(.)\1\1/.test(val)) return;
-
-                                            setFormData({...formData, tutorNombre: toTitleCase(val)}); 
+                                            setFormData({...formData, nombre: toTitleCase(val)}); 
+                                            clearError("nombre");
                                         }} 
                                     />
+                                    {/* Tooltip solo visible al hacer hover o focus */}
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.nombre} />
+                                    </div>
+                                </div>
+
+                                {/* Grado */}
+                                <div className="space-y-2 relative group">
+                                    <Label className={fieldErrors.grado ? "text-red-500" : ""}>Grado *</Label>
+                                    <Select value={formData.grado} onValueChange={(v) => {
+                                        setFormData({...formData, grado: v});
+                                        clearError("grado");
+                                    }}>
+                                        <SelectTrigger className={fieldErrors.grado ? "border-red-500" : ""}><SelectValue placeholder="Grado"/></SelectTrigger>
+                                        <SelectContent>{["1° Preescolar","2° Preescolar","3° Preescolar","1° Primaria","2° Primaria","3° Primaria","4° Primaria","5° Primaria","6° Primaria"].map(g=><SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                                    </Select>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.grado} />
+                                    </div>
+                                </div>
+
+                                {/* Tutor Nombre */}
+                                <div className="space-y-2 relative group">
+                                    <Label className={fieldErrors.tutorNombre ? "text-red-500" : ""}>Nombre Tutor *</Label>
+                                    <Input 
+                                        value={formData.tutorNombre} 
+                                        placeholder="Ej: Ricardo Leandro Martin Perez"
+                                        className={fieldErrors.tutorNombre ? "border-red-500 focus-visible:ring-red-500" : ""}
+                                        onChange={(e) => { 
+                                            const val = e.target.value;
+                                            if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
+                                            if (/(.)\1\1/.test(val)) return;
+                                            setFormData({...formData, tutorNombre: toTitleCase(val)}); 
+                                            clearError("tutorNombre");
+                                        }} 
+                                    />
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.tutorNombre} />
+                                    </div>
                                 </div>
                                 
-                                {/* 🚀 VALIDACIÓN ESTRICTA TELÉFONO EN VIVO */}
-                                <div className="space-y-2">
-                                    <Label>Teléfono Tutor *</Label>
-                                    <Input type="tel" maxLength={8} value={formData.tutorTelefono} placeholder="Ej: 88888888"
+                                {/* Teléfono Tutor */}
+                                <div className="space-y-2 relative group">
+                                    <Label className={fieldErrors.tutorTelefono ? "text-red-500" : ""}>Teléfono Tutor *</Label>
+                                    <Input 
+                                        type="tel" 
+                                        maxLength={8} 
+                                        value={formData.tutorTelefono} 
+                                        placeholder="Ej: 88888888"
+                                        className={fieldErrors.tutorTelefono ? "border-red-500 focus-visible:ring-red-500" : ""}
                                         onChange={(e) => {
-                                            let val = e.target.value.replace(/\D/g, ''); // Solo números
-                                            // Si quiere ser muy estricto y bloquear en vivo el primer dígito incorrecto:
-                                            if (val.length === 1 && !['5','7','8'].includes(val)) {
-                                                return; 
-                                            }
+                                            let val = e.target.value.replace(/\D/g, '');
+                                            if (val.length === 1 && !['5','7','8'].includes(val)) return;
                                             setFormData({...formData, tutorTelefono: val});
-                                        }} />
+                                            clearError("tutorTelefono");
+                                        }} 
+                                    />
                                     <p className="text-[10px] text-muted-foreground">8 dígitos. Debe iniciar con 5, 7 u 8.</p>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.tutorTelefono} />
+                                    </div>
                                 </div>
 
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label>Dirección *</Label>
-                                    <Input value={formData.direccion} placeholder="Direccion detallada ej: Calle Sacuanjoche 3 cuadras al sur media hacia arriba."
-                                        onChange={(e) => { if (/^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]*$/.test(e.target.value)) setFormData({...formData, direccion: e.target.value}); }} />
+                                {/* Dirección */}
+                                <div className="space-y-2 md:col-span-2 relative group">
+                                    <Label className={fieldErrors.direccion ? "text-red-500" : ""}>Dirección *</Label>
+                                    <Input 
+                                        value={formData.direccion} 
+                                        placeholder="Direccion detallada..."
+                                        className={fieldErrors.direccion ? "border-red-500 focus-visible:ring-red-500" : ""}
+                                        onChange={(e) => { 
+                                            if (/^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]*$/.test(e.target.value)) {
+                                                setFormData({...formData, direccion: e.target.value});
+                                                clearError("direccion");
+                                            }
+                                        }} 
+                                    />
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.direccion} />
+                                    </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label>Vehículo *</Label>
-                                    <Select value={formData.vehiculoId} onValueChange={(v)=>setFormData({...formData, vehiculoId: v})}>
-                                        <SelectTrigger><SelectValue placeholder="Vehículo"/></SelectTrigger>
+
+                                {/* Vehículo */}
+                                <div className="space-y-2 relative group">
+                                    <Label className={fieldErrors.vehiculoId ? "text-red-500" : ""}>Vehículo *</Label>
+                                    <Select value={formData.vehiculoId} onValueChange={(v) => {
+                                        setFormData({...formData, vehiculoId: v});
+                                        clearError("vehiculoId");
+                                    }}>
+                                        <SelectTrigger className={fieldErrors.vehiculoId ? "border-red-500" : ""}><SelectValue placeholder="Vehículo"/></SelectTrigger>
                                         <SelectContent>{vehiculos.map(v=><SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent>
                                     </Select>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.vehiculoId} />
+                                    </div>
                                 </div>
 
-                                {/* 🚀 VALIDACIÓN PRECIO EN VIVO */}
-                                <div className="space-y-2">
-                                    <Label className="text-green-600 font-bold">Precio Familiar (C$) *</Label>
+                                {/* Precio */}
+                                <div className="space-y-2 relative group">
+                                    <Label className={fieldErrors.precio ? "text-red-500" : "text-green-600 font-bold"}>Precio Familiar (C$) *</Label>
                                     <Input 
                                         type="number" 
                                         value={formData.precio} 
                                         placeholder="Mínimo 700"
-                                        min={700} // Bloquea las flechitas hacia abajo de 700
+                                        min={700} 
+                                        className={`border-green-200 focus:ring-green-500 ${fieldErrors.precio ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                                         onChange={(e) => {
                                             const val = e.target.value;
-                                            // Permitimos borrar (string vacío) para editar, pero no negativos
                                             if (val !== "" && Number(val) < 0) return; 
                                             setFormData({...formData, precio: val});
+                                            clearError("precio");
                                         }} 
-                                        className="border-green-200 focus:ring-green-500"
                                     />
-                                    <p className="text-[10px] text-muted-foreground">Debe ser mayor a 700 al registrar.</p>
+                                    <p className="text-[10px] text-muted-foreground">Debe ser mayor o igual a 700.</p>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.precio} />
+                                    </div>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-2 pt-4 border-t">
-                                <Checkbox checked={formData.hermanos} onCheckedChange={(c)=>{ setFormData({...formData, hermanos: c===true}); setOtrosHijos(c ? [{nombre:"", grado:"", vehiculoId:""}] : []); }} id="h"/>
+                                <Checkbox checked={formData.hermanos} onCheckedChange={(c)=>{ setFormData({...formData, hermanos: c===true}); setOtrosHijos(c ? [{nombre:"", grado:"", vehiculoId:""}] : []); setBrotherErrors([]); }} id="h"/>
                                 <Label htmlFor="h" className="cursor-pointer font-medium">¿Tiene hermanos?</Label>
                             </div>
 
+                            {/* Sección Hermanos */}
                             {formData.hermanos && (
                                 <div className="space-y-4 mt-4 border-t pt-4">
                                     {otrosHijos.map((h, i) => (
-                                        <div key={i} className="grid gap-4 md:grid-cols-3 items-end border-b pb-4">
-                                            <div className="space-y-2">
-                                                <Label>Hermano {i+1}</Label>
+                                        <div key={i} className="grid gap-4 md:grid-cols-3 items-start border-b pb-4 relative">
+                                            <div className="space-y-2 relative group">
+                                                <Label className={brotherErrors[i]?.nombre ? "text-red-500" : ""}>Hermano {i+1}</Label>
                                                 <Input 
                                                     value={h.nombre} 
+                                                    className={brotherErrors[i]?.nombre ? "border-red-500 focus-visible:ring-red-500" : ""}
                                                     onChange={(e)=>{ 
                                                         const val = e.target.value;
                                                         if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
                                                         if (/(.)\1\1/.test(val)) return;
 
                                                         const n=[...otrosHijos]; 
-                                                        n[i].nombre = toTitleCase(val); // Auto Capitalize también aquí
-                                                        setOtrosHijos(n); 
+                                                        n[i].nombre = toTitleCase(val); 
+                                                        setOtrosHijos(n);
+                                                        
+                                                        if (brotherErrors[i]?.nombre) {
+                                                            const newErrs = [...brotherErrors];
+                                                            newErrs[i] = { ...newErrs[i], nombre: undefined };
+                                                            setBrotherErrors(newErrs);
+                                                        }
                                                     }}
                                                 />
+                                                <div className="hidden group-focus-within:block group-hover:block">
+                                                    <ErrorTooltip message={brotherErrors[i]?.nombre} />
+                                                </div>
                                             </div>
-                                            <div className="space-y-2"><Label>Grado</Label><Select value={h.grado} onValueChange={(v)=>{const n=[...otrosHijos]; n[i].grado=v; setOtrosHijos(n);}}><SelectTrigger><SelectValue placeholder="Grado"/></SelectTrigger><SelectContent>{["1° Preescolar","2° Preescolar","3° Preescolar","1° Primaria","2° Primaria","3° Primaria","4° Primaria","5° Primaria","6° Primaria"].map(g=><SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select></div>
-                                            <div className="space-y-2 flex gap-2"><div className="flex-1"><Label>Vehículo</Label><Select value={h.vehiculoId} onValueChange={(v)=>{const n=[...otrosHijos]; n[i].vehiculoId=v; setOtrosHijos(n);}}><SelectTrigger><SelectValue placeholder="Vehículo"/></SelectTrigger><SelectContent>{vehiculos.map(v=><SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent></Select></div><Button type="button" variant="ghost" size="icon" className="text-red-500 mt-6" onClick={()=>{const n=[...otrosHijos]; n.splice(i,1); setOtrosHijos(n);}}><Trash2 className="h-5 w-5"/></Button></div>
+                                            <div className="space-y-2 relative group">
+                                                <Label className={brotherErrors[i]?.grado ? "text-red-500" : ""}>Grado</Label>
+                                                <Select value={h.grado} onValueChange={(v)=>{
+                                                    const n=[...otrosHijos]; n[i].grado=v; setOtrosHijos(n);
+                                                    if (brotherErrors[i]?.grado) {
+                                                        const newErrs = [...brotherErrors];
+                                                        newErrs[i] = { ...newErrs[i], grado: undefined };
+                                                        setBrotherErrors(newErrs);
+                                                    }
+                                                }}>
+                                                    <SelectTrigger className={brotherErrors[i]?.grado ? "border-red-500" : ""}><SelectValue placeholder="Grado"/></SelectTrigger>
+                                                    <SelectContent>{["1° Preescolar","2° Preescolar","3° Preescolar","1° Primaria","2° Primaria","3° Primaria","4° Primaria","5° Primaria","6° Primaria"].map(g=><SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                                                </Select>
+                                                <div className="hidden group-focus-within:block group-hover:block">
+                                                    <ErrorTooltip message={brotherErrors[i]?.grado} />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2 flex gap-2 items-start relative group">
+                                                <div className="flex-1 space-y-2">
+                                                    <Label className={brotherErrors[i]?.vehiculoId ? "text-red-500" : ""}>Vehículo</Label>
+                                                    <Select value={h.vehiculoId} onValueChange={(v)=>{
+                                                        const n=[...otrosHijos]; n[i].vehiculoId=v; setOtrosHijos(n);
+                                                        if (brotherErrors[i]?.vehiculoId) {
+                                                            const newErrs = [...brotherErrors];
+                                                            newErrs[i] = { ...newErrs[i], vehiculoId: undefined };
+                                                            setBrotherErrors(newErrs);
+                                                        }
+                                                    }}>
+                                                        <SelectTrigger className={brotherErrors[i]?.vehiculoId ? "border-red-500" : ""}><SelectValue placeholder="Vehículo"/></SelectTrigger>
+                                                        <SelectContent>{vehiculos.map(v=><SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}</SelectContent>
+                                                    </Select>
+                                                    <div className="hidden group-focus-within:block group-hover:block">
+                                                        <ErrorTooltip message={brotherErrors[i]?.vehiculoId} />
+                                                    </div>
+                                                </div>
+                                                <Button type="button" variant="ghost" size="icon" className="text-red-500 mt-8" onClick={()=>{
+                                                    const n=[...otrosHijos]; n.splice(i,1); setOtrosHijos(n);
+                                                    const e=[...brotherErrors]; e.splice(i,1); setBrotherErrors(e);
+                                                }}><Trash2 className="h-5 w-5"/></Button>
+                                            </div>
                                         </div>
                                     ))}
                                     <Button type="button" variant="outline" size="sm" onClick={()=>setOtrosHijos([...otrosHijos, {nombre:"", grado:"", vehiculoId:""}])}><Plus className="mr-2 h-4 w-4"/> Otro hermano</Button>

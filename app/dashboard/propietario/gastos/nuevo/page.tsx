@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea"; 
-import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Users, DollarSign, Bus, UserCog, Bell, BarChart3, TrendingDown, Loader2, Calendar } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -34,36 +34,53 @@ const fechaMinStr = `${y15}-${m15}-${d15}`; // YYYY-MM-DD
 
 // --- 2. REGLAS DE VALIDACIÓN (ZOD) ---
 
-const soloLetrasRegex = /^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]+$/;
+const soloLetrasRegex = /^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s]+$/; // Alfanumérico básico (Letras, números, espacios)
 
 const gastoSchema = z.object({
     descripcion: z.string()
-        .min(5, "La descripción es muy corta.")
-        .max(40, "La descripción debe ser corta (máx 40 caracteres).")
-        .regex(soloLetrasRegex, "La descripción solo puede contener letras (sin números ni símbolos).")
+        .min(5, "Descripción muy corta (mín 5 caracteres).")
+        .max(40, "Descripción muy larga (máx 40 caracteres).")
+        .regex(soloLetrasRegex, "Solo letras y números (sin símbolos).")
         .refine((val) => !/(.)\1\1/.test(val), {
-            message: "No puedes repetir la misma letra más de 2 veces seguidas.",
+            message: "No repetir letras más de 2 veces.",
         }),
     categoria: z.string().min(1, "Selecciona una categoría."),
     monto: z.coerce.number()
         .gt(0, "El monto debe ser mayor a 0.")
-        .lte(30000, "El monto no puede superar los 30,000 C$."), 
+        .lte(30000, "Monto excede el límite (30,000 C$)."), 
     fecha: z.string()
-        // Regla: No más antigua de 15 días
         .refine((val) => val >= fechaMinStr, {
-            message: "No se pueden registrar gastos con más de 15 días de antigüedad.",
+            message: "No se permiten gastos de más de 15 días de antigüedad.",
         })
-        // Regla: No fecha futura (mayor a hoy)
         .refine((val) => val <= fechaHoyStr, {
-            message: "No se pueden registrar gastos con fecha futura.",
+            message: "No se permiten fechas futuras.",
         }),
     vehiculoId: z.string().optional(),
     personalId: z.string().optional(),
 });
 
-// --- TIPOS ---
+// Tipos
 type Vehiculo = { id: string; nombre: string; };
 type Personal = { id: string; nombre: string; salario: number; };
+type FieldErrors = { [key: string]: string | undefined; };
+
+// --- COMPONENTE TOOLTIP DE ERROR ---
+const ErrorTooltip = ({ message }: { message?: string }) => {
+    if (!message) return null;
+    return (
+        <div className="absolute top-full left-0 mt-1 z-20 animate-in fade-in zoom-in-95 duration-200 w-full">
+            {/* Triangulito */}
+            <div className="absolute -top-[5px] left-4 w-3 h-3 bg-white border-t border-l border-gray-200 transform rotate-45 shadow-sm z-10" />
+            {/* Caja del mensaje */}
+            <div className="relative bg-white border border-gray-200 text-gray-800 text-xs px-3 py-2 rounded-md shadow-lg flex items-center gap-2">
+                <div className="bg-orange-500 text-white rounded-sm p-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                    <span className="font-bold text-[10px]">!</span>
+                </div>
+                <span className="font-medium">{message}</span>
+            </div>
+        </div>
+    );
+};
 
 // --- MENÚ ---
 const menuItems: MenuItem[] = [
@@ -89,6 +106,9 @@ export default function NuevoGastoPage() {
     const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
     const [personal, setPersonal] = useState<Personal[]>([]); 
     const [dataLoading, setDataLoading] = useState(true);
+
+    // Estados de error
+    const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
     const [formData, setFormData] = useState({
         descripcion: "",
@@ -116,7 +136,6 @@ export default function NuevoGastoPage() {
                 
                 const handleRes = async (res: Response) => {
                     if (res.ok) return await res.json();
-                    if (res.status === 404 || res.status === 204) return [];
                     return [];
                 };
 
@@ -134,10 +153,16 @@ export default function NuevoGastoPage() {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
+        
+        // Limpiar error al escribir
+        setFieldErrors(prev => ({ ...prev, [name]: undefined }));
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSelectChange = (name: string, value: string) => {
+        // Limpiar error al seleccionar
+        setFieldErrors(prev => ({ ...prev, [name]: undefined }));
+
         if (name === "categoria" && value === "salarios") {
             setFormData(prev => ({ 
                 ...prev, categoria: value, descripcion: "Pago de salario", vehiculoId: "N/A", monto: "", personalId: "N/A", 
@@ -159,16 +184,39 @@ export default function NuevoGastoPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
+        setFieldErrors({}); // Limpiar errores previos
 
         const esSalario = formData.categoria === 'salarios';
-        const empleadoSeleccionado = personal.find(p => p.id === formData.personalId);
         const esSalarioManual = esSalario && formData.personalId === "N/A";
 
         try {
             // 1. VALIDACIÓN ZOD
-            const valid = gastoSchema.parse(formData);
+            const result = gastoSchema.safeParse(formData);
 
-            if (esSalario && !formData.personalId && !esSalarioManual) throw new Error("Selecciona un empleado para el salario.");
+            if (!result.success) {
+                const newErrors: FieldErrors = {};
+                result.error.errors.forEach(err => {
+                    if (err.path[0]) newErrors[err.path[0].toString()] = err.message;
+                });
+                
+                // Validaciones lógicas manuales adicionales
+                if (esSalario && !formData.personalId && !esSalarioManual) {
+                    newErrors.personalId = "Selecciona un empleado.";
+                }
+
+                setFieldErrors(newErrors);
+                setLoading(false);
+                return; // Detener si hay errores
+            }
+
+            // Validaciones lógicas extra (si pasaron Zod pero fallan lógica de negocio específica)
+            if (esSalario && !formData.personalId && !esSalarioManual) {
+                setFieldErrors(prev => ({ ...prev, personalId: "Selecciona un empleado." }));
+                setLoading(false);
+                return;
+            }
+
+            const valid = result.data;
 
             const payload = {
                 descripcion: valid.descripcion.trim(),
@@ -200,8 +248,7 @@ export default function NuevoGastoPage() {
 
         } catch (err: any) {
             console.error(err);
-            const mensaje = err instanceof z.ZodError ? err.errors[0].message : err.message;
-            toast({ title: "Error", description: mensaje, variant: "destructive" });
+            toast({ title: "Error del Sistema", description: err.message, variant: "destructive" });
         } finally {
             setLoading(false);
         }
@@ -230,13 +277,14 @@ export default function NuevoGastoPage() {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Registrar Nuevo Gasto Seguro</CardTitle>
+                        <CardTitle>Registrar Nuevo Gasto</CardTitle>
                         <CardDescription>Completa los detalles del gasto operativo.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                        <form onSubmit={handleSubmit} className="space-y-4 pb-8">
                             
-                            <div className="space-y-2">
+                            {/* DESCRIPCIÓN */}
+                            <div className="space-y-2 relative group">
                                 <Label htmlFor="descripcion">Descripción *</Label>
                                 <Textarea 
                                     id="descripcion" 
@@ -245,22 +293,25 @@ export default function NuevoGastoPage() {
                                     value={formData.descripcion} 
                                     onChange={(e) => {
                                         const val = e.target.value;
-                                        // 1. Whitelist: SOLO Letras y espacios
-                                        if (!/^[a-zA-ZñÑáéíóúÁÉÍÓÚ\s]*$/.test(val)) return;
-                                        // 2. Anti Repetición
-                                        if (/(.)\1\1/.test(val)) return;
-
-                                        setFormData({ ...formData, descripcion: val })
+                                        if (!/^[a-zA-Z0-9ñÑáéíóúÁÉÍÓÚ\s.]*$/.test(val)) return; // Whitelist
+                                        if (/(.)\1\1/.test(val)) return; // Anti-repetición
+                                        
+                                        setFormData({ ...formData, descripcion: val });
+                                        setFieldErrors(prev => ({ ...prev, descripcion: undefined }));
                                     }} 
                                     required 
                                     maxLength={40}
                                     disabled={esSalario && empleadoSeleccionado && !esSalarioManual}
                                 />
-                                <p className="text-[10px] text-muted-foreground">Máx 40 caracteres. Solo letras.</p>
+                                <p className="text-[10px] text-muted-foreground">Máx 40 caracteres. Solo letras y números.</p>
+                                {/* Tooltip solo visible al hacer hover o focus */}
+                                <div className="hidden group-focus-within:block group-hover:block">
+                                    <ErrorTooltip message={fieldErrors.descripcion} />
+                                </div>
                             </div>
 
                             <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-2">
+                                <div className="space-y-2 relative group">
                                     <Label htmlFor="categoria">Categoría *</Label>
                                     <Select 
                                         value={formData.categoria} 
@@ -275,9 +326,12 @@ export default function NuevoGastoPage() {
                                             <SelectItem value="otros">Otros</SelectItem>
                                         </SelectContent>
                                     </Select>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.categoria} />
+                                    </div>
                                 </div>
                                 
-                                <div className="space-y-2">
+                                <div className="space-y-2 relative group">
                                     <Label htmlFor="vehiculoId">Asignar Vehículo</Label>
                                     <Select 
                                         value={formData.vehiculoId} 
@@ -290,11 +344,14 @@ export default function NuevoGastoPage() {
                                             {vehiculos.map(v => <SelectItem key={v.id} value={v.id}>{v.nombre}</SelectItem>)}
                                         </SelectContent>
                                     </Select>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.vehiculoId} />
+                                    </div>
                                 </div>
                             </div>
 
                             {esSalario && (
-                                <div className="space-y-2 md:col-span-2">
+                                <div className="space-y-2 md:col-span-2 relative group">
                                     <Label htmlFor="personalId">Asignar Empleado *</Label>
                                     <Select 
                                         value={formData.personalId} 
@@ -309,11 +366,15 @@ export default function NuevoGastoPage() {
                                             ))}
                                         </SelectContent>
                                     </Select>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.personalId} />
+                                    </div>
                                 </div>
                             )}
 
                             <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-2">
+                                {/* MONTO */}
+                                <div className="space-y-2 relative group">
                                     <Label htmlFor="monto">Monto (C$) *</Label>
                                     <Input 
                                         id="monto" 
@@ -324,32 +385,44 @@ export default function NuevoGastoPage() {
                                         value={formData.monto} 
                                         onChange={(e) => {
                                             const val = parseFloat(e.target.value);
-                                            if (val < 0) return; 
+                                            if (val < 0) return; // Bloqueo visual negativos
                                             if (val > 30000) return;
                                             setFormData({ ...formData, monto: e.target.value });
+                                            setFieldErrors(prev => ({ ...prev, monto: undefined }));
                                         }} 
                                         required 
                                         disabled={(esSalario && empleadoSeleccionado && !esSalarioManual) || loading}
                                     />
-                                    <p className="text-[10px] text-muted-foreground">Máximo C$30,000. Sin negativos.</p>
+                                    <p className="text-[10px] text-muted-foreground">Máximo C$30,000.</p>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.monto} />
+                                    </div>
                                 </div>
 
-                                <div className="space-y-2">
+                                {/* FECHA con Icono */}
+                                <div className="space-y-2 relative group">
                                     <Label htmlFor="fecha">Fecha del Gasto *</Label>
-                                    <Input 
-                                        id="fecha" 
-                                        name="fecha" 
-                                        type="date" 
-                                        value={formData.fecha} 
-                                        min={fechaMinStr}   // Bloqueo visual: Mínimo hace 15 días
-                                        max={fechaHoyStr}   // Bloqueo visual: Máximo hoy
-                                        onChange={handleChange} 
-                                        required 
-                                        disabled={loading}
-                                    />
+                                    <div className="relative">
+                                        <Calendar className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                        <Input 
+                                            id="fecha" 
+                                            name="fecha" 
+                                            type="date" 
+                                            className="pl-8" // Espacio para el icono
+                                            value={formData.fecha} 
+                                            min={fechaMinStr}   
+                                            max={fechaHoyStr}    
+                                            onChange={handleChange} 
+                                            required 
+                                            disabled={loading}
+                                        />
+                                    </div>
                                     <p className="text-[10px] text-muted-foreground">
-                                        Permitido: Desde {fechaMinStr} hasta {fechaHoyStr}
+                                        Permitido: {fechaMinStr} al {fechaHoyStr} (Hoy).
                                     </p>
+                                    <div className="hidden group-focus-within:block group-hover:block">
+                                        <ErrorTooltip message={fieldErrors.fecha} />
+                                    </div>
                                 </div>
                             </div>
 

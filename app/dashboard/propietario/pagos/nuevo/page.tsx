@@ -77,6 +77,25 @@ const formatCurrency = (num: number) => {
     return (num || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// --- COMPONENTE TOOLTIP DE ERROR ---
+const ErrorTooltip = ({ message }: { message?: string }) => {
+    if (!message) return null;
+    return (
+        // z-20 para evitar superposiciones indeseadas, absolute position
+        <div className="absolute top-full left-0 mt-1 z-20 animate-in fade-in zoom-in-95 duration-200 w-full min-w-[200px]">
+            {/* Triangulito */}
+            <div className="absolute -top-[5px] left-4 w-3 h-3 bg-white border-t border-l border-gray-200 transform rotate-45 shadow-sm z-10" />
+            {/* Caja del mensaje */}
+            <div className="relative bg-white border border-gray-200 text-gray-800 text-xs px-3 py-2 rounded-md shadow-lg flex items-center gap-2">
+                <div className="bg-orange-500 text-white rounded-sm p-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                    <span className="font-bold text-[10px]">!</span>
+                </div>
+                <span className="font-medium">{message}</span>
+            </div>
+        </div>
+    );
+};
+
 export default function PagosRapidosPage() {
     const { toast } = useToast();
     const [alumnos, setAlumnos] = useState<Alumno[]>([]);
@@ -87,6 +106,9 @@ export default function PagosRapidosPage() {
     
     const [loadingAction, setLoadingAction] = useState<string | null>(null); 
     const [abonosDiciembre, setAbonosDiciembre] = useState<Map<string, string>>(new Map());
+    // Estado para errores de validación en abonos: Clave = FamiliaID, Valor = Mensaje Error
+    const [abonoErrors, setAbonoErrors] = useState<Map<string, string>>(new Map());
+    
     const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
 
     // --- CARGAR DATOS ---
@@ -278,17 +300,17 @@ export default function PagosRapidosPage() {
         }
     };
 
-    // 🚀 ABONO A DICIEMBRE CON DISTRIBUCIÓN EQUITATIVA
+    // 🚀 ABONO A DICIEMBRE (VALIDADO)
     const handleAbonarDiciembreFamilia = async (familia: Familia) => {
         const abonoStr = abonosDiciembre.get(familia.id);
         const abonoTotal = parseFloat(abonoStr || "0");
 
+        // Validación final antes de enviar (aunque la UI ya bloquea)
         if (!abonoTotal || abonoTotal <= 0) {
-            return toast({ title: "Monto inválido", description: "Ingrese un monto mayor a 0.", variant: "destructive" });
+            return toast({ title: "Monto inválido", description: "Ingrese un monto válido.", variant: "destructive" });
         }
-        // Se agrega margen de 0.1 para errores de punto flotante
         if (abonoTotal > familia.deudaDiciembreTotal + 0.1) {
-            return toast({ title: "Monto Excesivo", description: "El abono supera la deuda familiar.", variant: "destructive" });
+            return toast({ title: "Monto Excesivo", description: "El abono supera la deuda.", variant: "destructive" });
         }
 
         setLoadingAction(familia.id);
@@ -298,25 +320,18 @@ export default function PagosRapidosPage() {
             const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
             const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-            // 1. Identificamos quiénes deben y cuánto
             const hijosConDeuda = familia.alumnos.filter(a => (a.saldoDic || 0) > 0.01);
             let restantePorDistribuir = abonoTotal;
             
-            // 2. Calculamos cuánto le toca a cada uno para ser justos
             const montoIdealPorHijo = remainingToTwoDecimals(restantePorDistribuir / hijosConDeuda.length);
 
             for (let i = 0; i < hijosConDeuda.length; i++) {
                 const hijo = hijosConDeuda[i];
-                
-                // Si es el último hijo, le damos todo lo que sobre para no perder centavos
-                // Si no, le damos la cuota ideal (limitada a su deuda personal)
                 let pagoHijo = (i === hijosConDeuda.length - 1) 
                     ? restantePorDistribuir 
                     : montoIdealPorHijo;
                 
-                // Nunca pagamos más de lo que debe el niño
                 pagoHijo = Math.min(pagoHijo, hijo.saldoDic!);
-                // Ajuste final de decimales
                 pagoHijo = remainingToTwoDecimals(pagoHijo);
 
                 if (pagoHijo <= 0) continue;
@@ -336,7 +351,15 @@ export default function PagosRapidosPage() {
 
             fetchData();
             toast({ title: "Abono Registrado", description: `Se distribuyeron C$ ${abonoTotal} entre los hermanos.` });
-            setAbonosDiciembre(new Map(abonosDiciembre.set(familia.id, "")));
+            
+            // Limpiar el campo y errores
+            const newAbonos = new Map(abonosDiciembre);
+            newAbonos.set(familia.id, "");
+            setAbonosDiciembre(newAbonos);
+            
+            const newErrors = new Map(abonoErrors);
+            newErrors.delete(familia.id);
+            setAbonoErrors(newErrors);
 
         } catch (err: any) {
             toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -424,6 +447,13 @@ export default function PagosRapidosPage() {
                             const esRegularPagado = familia.todosAlDia;
                             const esDiciembrePagado = familia.deudaDiciembreTotal <= 0;
 
+                            // Obtener error específico para esta familia si existe
+                            const abonoError = abonoErrors.get(familia.id);
+                            const abonoValue = abonosDiciembre.get(familia.id) || '';
+                            const hasAbonoError = !!abonoError;
+                            // Deshabilitar botón si hay error, está cargando, ya pagó o el campo está vacío
+                            const isAbonoDisabled = isLoading || esDiciembrePagado || hasAbonoError || abonoValue === '';
+
                             return (
                                 <div key={familia.id} className="border rounded-lg overflow-hidden transition-colors hover:bg-muted/20">
                                     
@@ -469,7 +499,7 @@ export default function PagosRapidosPage() {
                                             )}
                                         </div>
                                         
-                                        {/* Col 5: Acciones (VISUAL CORREGIDO: INPUT ARRIBA, BOTÓN ABAJO) */}
+                                        {/* Col 5: Acciones */}
                                         <div className="w-full md:w-[25%] text-left md:text-right space-y-2" onClick={e => e.stopPropagation()}>
                                             
                                             {/* Botón Pagar Mes */}
@@ -498,21 +528,48 @@ export default function PagosRapidosPage() {
                                             <Separator className="my-1"/>
 
                                             {/* Sección Abono Diciembre (Vertical) */}
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 relative group">
                                                 <Input
                                                     type="number"
                                                     placeholder={`Abono (Max: ${formatCurrency(familia.deudaDiciembreTotal)})`}
                                                     value={abonosDiciembre.get(familia.id) || ''}
-                                                    onChange={(e) => setAbonosDiciembre(new Map(abonosDiciembre.set(familia.id, e.target.value)))}
+                                                    onChange={(e) => {
+                                                        const valStr = e.target.value;
+                                                        const val = parseFloat(valStr);
+                                                        const max = familia.deudaDiciembreTotal;
+
+                                                        // Actualizar valor
+                                                        setAbonosDiciembre(new Map(abonosDiciembre.set(familia.id, valStr)));
+
+                                                        // Validar en tiempo real
+                                                        const newErrors = new Map(abonoErrors);
+                                                        if (valStr !== "") {
+                                                            if (val <= 0) {
+                                                                newErrors.set(familia.id, "El monto debe ser mayor a 0.");
+                                                            } else if (val > max + 0.01) {
+                                                                newErrors.set(familia.id, `Máximo permitido: C$ ${formatCurrency(max)}`);
+                                                            } else {
+                                                                newErrors.delete(familia.id);
+                                                            }
+                                                        } else {
+                                                            newErrors.delete(familia.id);
+                                                        }
+                                                        setAbonoErrors(newErrors);
+                                                    }}
                                                     disabled={isLoading || esDiciembrePagado}
-                                                    className="h-8 text-xs"
+                                                    className={`h-8 text-xs ${abonoError ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
                                                 />
+                                                {/* Tooltip de error específico para esta familia */}
+                                                <div className="hidden group-focus-within:block group-hover:block">
+                                                    <ErrorTooltip message={abonoError} />
+                                                </div>
+
                                                 <Button 
                                                     onClick={() => handleAbonarDiciembreFamilia(familia)}
-                                                    disabled={isLoading || esDiciembrePagado}
+                                                    disabled={isAbonoDisabled}
                                                     size="sm"
                                                     variant="secondary"
-                                                    className="w-full h-8 text-xs mt-1" // mt-1 para separar un poco
+                                                    className="w-full h-8 text-xs mt-1"
                                                 >
                                                     <Gift className="mr-2 h-3 w-3" /> Abonar a Diciembre
                                                 </Button>

@@ -68,6 +68,29 @@ const vehiculoSchema = z.object({
     fotoUrl: z.string().optional(),
 });
 
+// Tipos para errores
+type FieldErrors = {
+    [key: string]: string | undefined;
+};
+
+// --- COMPONENTE TOOLTIP DE ERROR ---
+const ErrorTooltip = ({ message }: { message?: string }) => {
+    if (!message) return null;
+    return (
+        <div className="absolute top-full left-0 mt-1 z-20 animate-in fade-in zoom-in-95 duration-200 w-full">
+            {/* Triangulito */}
+            <div className="absolute -top-[5px] left-4 w-3 h-3 bg-white border-t border-l border-gray-200 transform rotate-45 shadow-sm z-10" />
+            {/* Caja del mensaje */}
+            <div className="relative bg-white border border-gray-200 text-gray-800 text-xs px-3 py-2 rounded-md shadow-lg flex items-center gap-2">
+                <div className="bg-orange-500 text-white rounded-sm p-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                    <span className="font-bold text-[10px]">!</span>
+                </div>
+                <span className="font-medium">{message}</span>
+            </div>
+        </div>
+    );
+};
+
 // --- MENÚ ---
 const menuItems: MenuItem[] = [
   { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
@@ -87,6 +110,9 @@ export default function NuevoVehiculoPage() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [fotoUrl, setFotoUrl] = useState("");
+  
+  // Estado de Errores
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const [formData, setFormData] = useState({
     nombre: "",
@@ -94,12 +120,14 @@ export default function NuevoVehiculoPage() {
     marca: "",
     modelo: "",
     anio: "",
-    capacidad: "10", // <-- POR DEFECTO 10
+    capacidad: "10", 
     estado: "activo" 
   });
 
+  // Helper para limpiar errores al escribir
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    setFieldErrors(prev => ({ ...prev, [name]: undefined })); // Limpiar error del campo
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -140,9 +168,11 @@ export default function NuevoVehiculoPage() {
     setFotoUrl("");
   };
 
+  // --- Enviar Vehículo ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setFieldErrors({}); // Limpiar errores previos
 
     try {
       // 1. VALIDACIÓN ZOD
@@ -154,7 +184,22 @@ export default function NuevoVehiculoPage() {
           fotoUrl: fotoUrl
       };
 
-      const valid = vehiculoSchema.parse(datosParaValidar);
+      // Usamos safeParse para obtener todos los errores sin lanzar excepción
+      const result = vehiculoSchema.safeParse(datosParaValidar);
+
+      if (!result.success) {
+          const newErrors: FieldErrors = {};
+          result.error.errors.forEach(err => {
+              if (err.path[0]) {
+                  newErrors[err.path[0].toString()] = err.message;
+              }
+          });
+          setFieldErrors(newErrors);
+          setLoading(false);
+          return; // Detenemos el envío si hay errores
+      }
+
+      const valid = result.data;
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("No hay sesión activa");
@@ -192,8 +237,7 @@ export default function NuevoVehiculoPage() {
 
     } catch (err: any) {
       console.error("Error completo:", err);
-      const mensaje = err instanceof z.ZodError ? err.errors[0].message : err.message;
-      toast({ title: "Error de Validación", description: mensaje, variant: "destructive" });
+      toast({ title: "Error del Sistema", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -212,7 +256,7 @@ export default function NuevoVehiculoPage() {
             <CardDescription>Completa los detalles de la unidad de transporte.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6 pb-8">
               
               {/* FOTO */}
               <div className="space-y-2">
@@ -248,8 +292,8 @@ export default function NuevoVehiculoPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                {/* NOMBRE */}
-                <div className="space-y-2">
+                {/* NOMBRE (Auto Capitalize) */}
+                <div className="space-y-2 relative group">
                   <Label htmlFor="nombre">Nombre o Apodo *</Label>
                   <Input 
                     id="nombre" 
@@ -262,42 +306,54 @@ export default function NuevoVehiculoPage() {
                         if (/(.)\1\1/.test(val)) return;
                         const valFormatted = val.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
                         setFormData({ ...formData, nombre: valFormatted });
+                        handleChange(e); // Limpia error
                     }} 
                     required disabled={loading}
                   />
                   <p className="text-[10px] text-muted-foreground">Solo letras. Primera mayúscula.</p>
+                  {/* Tooltip */}
+                  <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.nombre} />
+                  </div>
                 </div>
 
-                {/* PLACA */}
-                <div className="space-y-2">
+                {/* PLACA (M + 6 Dígitos, sin iniciar en 0) */}
+                <div className="space-y-2 relative group">
                   <Label htmlFor="placa">Placa *</Label>
                    <Input 
                     id="placa" 
                     name="placa"
                     placeholder="M 123 456" 
                     value={formData.placa} 
-                    maxLength={7} 
+                    maxLength={7} // M + 6 dígitos
                     onChange={(e) => {
                         let val = e.target.value.toUpperCase();
+                        
                         if (!val.startsWith("M")) {
                             val = "M" + val.replace(/[^0-9]/g, "");
                         } else {
                             val = "M" + val.substring(1).replace(/[^0-9]/g, "");
                         }
+
                         if (val.length > 1 && val[1] === '0') {
                             val = val.slice(0, 1) + val.slice(2);
                         }
+                        
                         setFormData({ ...formData, placa: val });
+                        handleChange(e);
                     }} 
                     required disabled={loading}
                   />
                   <p className="text-[10px] text-muted-foreground">Formato: M seguido de 6 dígitos (No puede iniciar con 0).</p>
+                  <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.placa} />
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                  {/* MARCA */}
-                 <div className="space-y-2">
+                 <div className="space-y-2 relative group">
                   <Label htmlFor="marca">Marca</Label>
                   <Input 
                     id="marca" 
@@ -310,13 +366,17 @@ export default function NuevoVehiculoPage() {
                         if (/(.)\1\1/.test(val)) return;
                         const valFormatted = val.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
                         setFormData({ ...formData, marca: valFormatted });
+                        handleChange(e);
                     }} 
                     disabled={loading}
                   />
+                   <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.marca} />
+                  </div>
                 </div>
 
                 {/* MODELO */}
-                <div className="space-y-2">
+                <div className="space-y-2 relative group">
                   <Label htmlFor="modelo">Modelo</Label>
                   <Input 
                     id="modelo" 
@@ -326,20 +386,26 @@ export default function NuevoVehiculoPage() {
                     onChange={(e) => {
                         const val = e.target.value;
                         if (!/^[a-zA-Z0-9\s-]*$/.test(val)) return;
+                        
                         if ((val.match(/-/g) || []).length > 1) return; 
                         if ((val.match(/\d/g) || []).length > 4) return; 
                         if (/(.)\1\1/.test(val)) return; 
+
                         setFormData({ ...formData, modelo: val });
+                        handleChange(e);
                     }} 
                     disabled={loading}
                   />
                   <p className="text-[10px] text-muted-foreground">Letras, números (máx 4) y un guion.</p>
+                   <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.modelo} />
+                  </div>
                 </div>
               </div>
 
                <div className="grid gap-4 md:grid-cols-2">
                 {/* AÑO - SIN TRIANGULITOS */}
-                <div className="space-y-2">
+                <div className="space-y-2 relative group">
                   <Label htmlFor="anio">Año</Label>
                   <Input 
                     id="anio" 
@@ -351,35 +417,43 @@ export default function NuevoVehiculoPage() {
                         const val = e.target.value;
                         if (val.length > 4) return;
                         setFormData({ ...formData, anio: val });
+                        handleChange(e);
                     }} 
                     disabled={loading}
-                    // ESTA CLASE ELIMINA LOS BOTONES SPIN (Triangulitos)
                     className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
+                   <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.anio} />
+                  </div>
                 </div>
 
                 {/* CAPACIDAD - MIN 10 */}
-                <div className="space-y-2">
+                <div className="space-y-2 relative group">
                   <Label htmlFor="capacidad">Capacidad (Asientos)</Label>
                   <Input 
                     id="capacidad" 
                     name="capacidad" 
                     type="number" 
                     placeholder="10 - 60"
-                    min={10} // BLOQUEA bajada con flechas por debajo de 10
+                    min={10} // BLOQUEA bajada con flechas
                     max={60}
                     value={formData.capacidad} 
                     onChange={(e) => {
                         const val = e.target.value;
                         if (val.length > 2) return; 
                         setFormData({ ...formData, capacidad: val });
+                        handleChange(e);
                     }} 
                     disabled={loading}
                   />
                   <p className="text-[10px] text-muted-foreground">Mínimo 10 asientos.</p>
+                   <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.capacidad} />
+                  </div>
                 </div>
               </div>
 
+              {/* Campo estado oculto */}
               <input type="hidden" name="estado" value={formData.estado} />
 
               <div className="flex gap-3 pt-4">

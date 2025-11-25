@@ -41,6 +41,29 @@ const personalSchema = z.object({
     vehiculoId: z.string().optional(),
 });
 
+// Tipos para errores
+type FieldErrors = {
+    [key: string]: string | undefined;
+};
+
+// --- COMPONENTE TOOLTIP DE ERROR ---
+const ErrorTooltip = ({ message }: { message?: string }) => {
+    if (!message) return null;
+    return (
+        <div className="absolute top-full left-0 mt-1 z-20 animate-in fade-in zoom-in-95 duration-200 w-full">
+            {/* Triangulito */}
+            <div className="absolute -top-[5px] left-4 w-3 h-3 bg-white border-t border-l border-gray-200 transform rotate-45 shadow-sm z-10" />
+            {/* Caja del mensaje */}
+            <div className="relative bg-white border border-gray-200 text-gray-800 text-xs px-3 py-2 rounded-md shadow-lg flex items-center gap-2">
+                <div className="bg-orange-500 text-white rounded-sm p-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+                    <span className="font-bold text-[10px]">!</span>
+                </div>
+                <span className="font-medium">{message}</span>
+            </div>
+        </div>
+    );
+};
+
 // --- MENÚ ---
 const menuItems: MenuItem[] = [
     { title: "Gestionar Alumnos", description: "Ver y administrar estudiantes", icon: Users, href: "/dashboard/propietario/alumnos", color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
@@ -62,12 +85,15 @@ export default function NuevoPersonalPage() {
   
   const [vehiculos, setVehiculos] = useState<Vehiculo[]>([]);
   const [vehiculosLoading, setVehiculosLoading] = useState(true);
+  
+  // Estado de Errores
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const [formData, setFormData] = useState({
     nombre: "",
     puesto: "Asistente",
     telefono: "",
-    salario: "4500", // <-- Valor por defecto: 4500
+    salario: "4500", // Valor por defecto
     vehiculoId: "N/A",
   });
 
@@ -94,22 +120,38 @@ export default function NuevoPersonalPage() {
     fetchVehiculos();
   }, []);
 
+  // Helpers para limpiar errores
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    setFieldErrors(prev => ({ ...prev, [name]: undefined })); // Limpia error
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSelectChange = (name: string, value: string) => {
+    setFieldErrors(prev => ({ ...prev, [name]: undefined })); // Limpia error
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setFieldErrors({}); // Limpiar errores previos
 
     try {
-      // 1. VALIDACIÓN ZOD
-      const valid = personalSchema.parse(formData);
+      // 1. VALIDACIÓN ZOD (SafeParse)
+      const result = personalSchema.safeParse(formData);
+
+      if (!result.success) {
+          const newErrors: FieldErrors = {};
+          result.error.errors.forEach(err => {
+              if (err.path[0]) newErrors[err.path[0].toString()] = err.message;
+          });
+          setFieldErrors(newErrors);
+          setLoading(false);
+          return; // Detenemos el envío
+      }
+
+      const valid = result.data;
 
       // 2. GENERACIÓN AUTOMÁTICA DE FECHA (HOY)
       const now = new Date();
@@ -128,7 +170,7 @@ export default function NuevoPersonalPage() {
         puesto: valid.puesto, 
         rol: valid.puesto.toLowerCase(), 
         salario: valid.salario,
-        fechaContratacion: fechaHoyAuto, // Fecha generada automáticamente
+        fechaContratacion: fechaHoyAuto, 
         vehiculoId: formData.vehiculoId === "N/A" ? undefined : formData.vehiculoId,
       };
 
@@ -151,8 +193,8 @@ export default function NuevoPersonalPage() {
 
     } catch (error: any) {
       console.error(error);
-      const mensaje = error instanceof z.ZodError ? error.errors[0].message : error.message;
-      toast({ title: "Error de Validación", description: mensaje, variant: "destructive" });
+      // Error general de sistema (no de validación de campos)
+      toast({ title: "Error del Sistema", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -175,10 +217,12 @@ export default function NuevoPersonalPage() {
             <CardDescription>Registra un nuevo empleado validado (Asistente o Chofer).</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6 pb-8">
               
               <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-2">
+                
+                {/* NOMBRE */}
+                <div className="space-y-2 relative group">
                   <Label htmlFor="nombre">Nombre Completo *</Label>
                   <Input 
                     id="nombre" 
@@ -194,13 +238,20 @@ export default function NuevoPersonalPage() {
                         const valFormatted = val.replace(/(^|\s)[a-zñáéíóú]/g, (c) => c.toUpperCase());
 
                         setFormData({ ...formData, nombre: valFormatted });
+                        setFieldErrors(prev => ({ ...prev, nombre: undefined })); // Limpiar error
                     }} 
                     required 
                   />
-                  <p className="text-[10px] text-muted-foreground">Solo letras. Formato Nombre Propio (Ej: Juan Pérez).</p>
+                  <p className="text-[10px] text-muted-foreground">Solo letras. Primera mayúscula.</p>
+                  
+                  {/* TOOLTIP */}
+                  <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.nombre} />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
+                {/* TELÉFONO */}
+                <div className="space-y-2 relative group">
                   <Label htmlFor="telefono">Teléfono (WhatsApp) *</Label>
                   <div className="relative">
                     <Smartphone className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
@@ -215,16 +266,23 @@ export default function NuevoPersonalPage() {
                             let val = e.target.value.replace(/\D/g, '');
                             if (val.length === 1 && !['5','7','8'].includes(val)) return;
                             setFormData({ ...formData, telefono: val });
+                            setFieldErrors(prev => ({ ...prev, telefono: undefined }));
                         }} 
                         required 
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground">8 dígitos (Inicia con 5, 7 u 8).</p>
+                  
+                  {/* TOOLTIP */}
+                  <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.telefono} />
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-2">
+                {/* PUESTO */}
+                <div className="space-y-2 relative group">
                   <Label htmlFor="puesto">Puesto / Rol *</Label>
                   <Select 
                     value={formData.puesto} 
@@ -236,33 +294,44 @@ export default function NuevoPersonalPage() {
                         <SelectItem value="Chofer">Chofer</SelectItem>
                     </SelectContent>
                   </Select>
+                   {/* TOOLTIP */}
+                   <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.puesto} />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
+                {/* SALARIO */}
+                <div className="space-y-2 relative group">
                   <Label htmlFor="salario">Salario Mensual (C$) *</Label>
                   <Input 
                     id="salario" 
                     name="salario" 
                     type="number" 
-                    placeholder="4500 - 12000" 
-                    min={4500} // BLOQUEO VISUAL: Flechas no bajan de 4500
-                    max={12000}
+                    placeholder="4501 - 12000" 
                     value={formData.salario} 
+                    min={4500} // Bloqueo flechas
+                    max={12000}
                     onChange={(e) => {
                         const val = parseFloat(e.target.value);
-                        // Permitimos borrar para editar (string vacío), pero no negativos.
                         if (e.target.value !== "" && val < 0) return;
                         if (val > 12000) return; 
-                        handleChange(e);
+                        
+                        setFormData({ ...formData, salario: e.target.value });
+                        setFieldErrors(prev => ({ ...prev, salario: undefined }));
                     }} 
                   />
                   <p className="text-[10px] text-muted-foreground">Rango: 4,500 - 12,000 C$.</p>
+                  
+                  {/* TOOLTIP */}
+                  <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.salario} />
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-6 md:grid-cols-2">
-                 {/* Vehículo Asignado (Sin input de fecha al lado) */}
-                 <div className="space-y-2">
+                 {/* VEHÍCULO */}
+                 <div className="space-y-2 relative group">
                     <Label htmlFor="vehiculoId">Vehículo Asignado (Opcional)</Label>
                     <Select 
                         value={formData.vehiculoId} 
@@ -279,6 +348,9 @@ export default function NuevoPersonalPage() {
                             ))}
                         </SelectContent>
                     </Select>
+                    <div className="hidden group-focus-within:block group-hover:block">
+                      <ErrorTooltip message={fieldErrors.vehiculoId} />
+                    </div>
                  </div>
               </div>
 
